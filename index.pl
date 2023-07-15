@@ -51,12 +51,9 @@ helper dbs => sub {
     }
 };
 
-get '/' => sub {
-    my $c = shift;
-} => 'index';
+#Ledger API Calls
 
-#SQL LEDGER
-
+#Get An Individual GL transaction
 get '/gl_transaction/:id' => sub {
     my $c  = shift;
     my $id = $c->param('id');
@@ -116,6 +113,7 @@ get '/gl_transaction/:id' => sub {
     $c->render( status => 200, json => $response );
 };
 
+#Get All GL Transactions
 get '/gl_transactions' => sub {
     my $c      = shift;
     my $params = $c->req->params->to_hash;
@@ -129,3 +127,5 @@ get '/gl_transactions' => sub {
     GL->transactions( $c->slconfig, $form );
     $c->render( status => 200, json => $form->{GL} );
 };
+
+app->start;
