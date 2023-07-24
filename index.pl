@@ -23,9 +23,10 @@ use SL::IS;
 use SL::CA;
 use SL::GL;
 use Mojo::JSON qw(encode_json);
+use DateTime::Format::ISO8601;
 
 my %myconfig = (
-    dateformat   => 'mm/dd/yy',
+    dateformat   => 'yyyy/mm/dd',
     dbdriver     => 'Pg',
     dbhost       => '',
     dbname       => 'ledger28',
@@ -161,6 +162,33 @@ post '/:client/gl_transaction' => sub {
     my $client = $c->param('client');
     my $data   = $c->req->json;
 
+    # Check if 'transdate' is present in the data
+    unless ( exists $data->{transdate} ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message => "The 'transdate' field is required.",
+                },
+            },
+        );
+    }
+
+    my $transdate = $data->{transdate};
+
+    # Validate 'transdate' format (ISO date format)
+    unless ( $transdate =~ /^\d{4}-\d{2}-\d{2}$/ ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message =>
+"Invalid 'transdate' format. Expected ISO 8601 date format (YYYY-MM-DD).",
+                },
+            },
+        );
+    }
+
     # Check if the LINES array has at least 2 items
     unless ( @{ $data->{LINES} } >= 2 ) {
         return $c->render(
@@ -171,6 +199,26 @@ post '/:client/gl_transaction' => sub {
                 },
             },
         );
+    }
+
+    # Check if 'CURR' is present and validate against database if not empty
+    if ( exists $data->{currency} && $data->{currency} ne '' ) {
+        my $currency = $data->{currency};
+        my $dbs      = $c->dbs($client);
+
+        # Check if the 'CURR' exists in the 'curr' column of the database table
+        my $result =
+          $dbs->query( "SELECT curr FROM curr WHERE curr = ?", $currency );
+        unless ( $result->rows ) {
+            return $c->render(
+                status => 400,
+                json   => {
+                    Error => {
+                        message => "The specified currency does not exist.",
+                    },
+                },
+            );
+        }
     }
 
     # Create the DBIx::Simple handle
@@ -187,7 +235,7 @@ post '/:client/gl_transaction' => sub {
     $form->{description}  = $data->{description};
     $form->{curr}         = $data->{currency};
     $form->{exchangerate} = $data->{exchangerate};
-    $form->{transdate}    = $data->{transdate};
+    $form->{transdate}    = $transdate;
 
     my $i            = 1;
     my $total_debit  = 0;
