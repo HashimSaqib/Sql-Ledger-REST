@@ -84,42 +84,6 @@ helper validate_date => sub {
 
 #Ledger API Calls
 
-# Get Account Trans
-get '/:client/acc-trans' => sub {
-    my $c      = shift;
-    my $params = $c->req->params->to_hash;
-    my $client = $c->param('client');
-    return unless $c->client_check($client);
-
-    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
-
-    my $form = new Form;
-    for ( keys %$params ) { $form->{$_} = $params->{$_} if $params->{$_} }
-    $form->{category} = 'X';
-
-    GL->transactions( $c->slconfig, $form );
-
-    # Check if the result is undefined, empty, or has no entries
-    if (  !defined $form->{GL}
-        || ref $form->{GL} ne 'ARRAY'
-        || scalar( @{ $form->{GL} } ) == 0 )
-    {
-        return $c->render(
-            status => 404,
-            json   => { error => "No transactions found" }
-        );
-    }
-
-    # Assuming $form->{GL} is an array reference with hash references
-    foreach my $transaction ( @{ $form->{GL} } ) {
-        delete $transaction->{$_}
-          for
-          qw(address address1 address2 city country entry_id name name_id zipcode);
-    }
-
-    $c->render( status => 200, json => $form->{GL} );
-};
-
 get '/:client/gl/transactions' => sub {
     my $c      = shift;
     my $client = $c->param('client');
