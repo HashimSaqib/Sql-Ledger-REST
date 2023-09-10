@@ -422,7 +422,7 @@ post '/:client/gl/transactions' => sub {
             cleared       => $form->{"cleared_$i"},
             memo          => $form->{"memo_$i"},
             source        => $form->{"source_$i"},
-            fxTransaction => $form->{"fx_transaction_$i"},
+            fxTransaction => \0,
           };
     }
 
@@ -431,7 +431,7 @@ post '/:client/gl/transactions' => sub {
 
         # Query the acc_trans table for the relevant entries
         my $fx_trans_entries = $dbs->query(
-"SELECT * FROM acc_trans WHERE trans_id = ? AND fx_transaction = true",
+"SELECT amount, chart_id, tax_chart_id, taxamount, cleared, memo, source FROM acc_trans WHERE trans_id = ? AND fx_transaction = true",
             $form->{id}
         );
 
@@ -446,7 +446,7 @@ post '/:client/gl/transactions' => sub {
                 cleared       => $entry->{cleared},
                 memo          => $entry->{memo},
                 source        => $entry->{source},
-                fxTransaction => $entry->{fx_transaction},
+                fxTransaction => \1,
               };
         }
     }
