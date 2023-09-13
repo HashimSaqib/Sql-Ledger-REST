@@ -20,10 +20,6 @@ Detailed documentation and updates on the API are available on [SwaggerHub](http
 
 We're constantly working to improve Sql-Ledger-REST and welcome contributions. Please feel free to submit pull requests or raise issues.
 
-## License
-
-[MIT License](LICENSE)
-
 ## Acknowledgements
 
 This project is built upon the [Run my accounts branch of sql ledger](https://github.com/ledger123/runmyaccounts).
