@@ -347,10 +347,35 @@ post '/:client/gl/transactions' => sub {
     $form->{transdate}       = $transdate;
     $form->{defaultcurrency} = $default_currency;
 
-    my $i            = 1;
     my $total_debit  = 0;
     my $total_credit = 0;
+    my $i            = 1;
     foreach my $line ( @{ $data->{lines} } ) {
+
+# Subtract taxAmount from debit or credit if taxAccount and taxAmount are defined
+        if ( defined $line->{taxAccount} && defined $line->{taxAmount} ) {
+            $line->{debit}  -= ( $line->{debit} > 0  ? $line->{taxAmount} : 0 );
+            $line->{credit} -= ( $line->{credit} > 0 ? $line->{taxAmount} : 0 );
+
+            # Add new tax line to $form
+            if ( $line->{debit} > 0 ) {
+                $form->{"debit_$i"}  = $line->{taxAmount};
+                $form->{"credit_$i"} = 0;
+            }
+            else {
+                $form->{"debit_$i"}  = 0;
+                $form->{"credit_$i"} = $line->{taxAmount};
+            }
+
+            $form->{"accno_$i"}  = $line->{taxAccount};
+            $form->{"tax_$i"}    = 'auto';
+            $form->{"memo_$i"}   = $line->{memo};
+            $form->{"source_$i"} = $line->{source};
+
+            $i++;    # Increment the counter after processing the tax line
+        }
+
+        # Process the regular line
         $form->{"debit_$i"}     = $line->{debit};
         $form->{"credit_$i"}    = $line->{credit};
         $form->{"accno_$i"}     = $line->{accno};
@@ -360,33 +385,11 @@ post '/:client/gl/transactions' => sub {
         $form->{"memo_$i"}      = $line->{memo};
         $form->{"source_$i"}    = $line->{source};
 
-        if ( defined $line->{taxAccount} && defined $line->{taxAmount} ) {
-            $total_debit +=
-              $line->{debit} + ( $line->{debit} > 0 ? $line->{taxAmount} : 0 );
-            $total_credit += $line->{credit} +
-              ( $line->{credit} > 0 ? $line->{taxAmount} : 0 );
-        }
-        else {
-            $total_debit  += $line->{debit};
-            $total_credit += $line->{credit};
-        }
-
-        $i++;
+        $i++;    # Increment the counter after processing the regular line
     }
 
-    if ( $total_debit != $total_credit ) {
-        return $c->render(
-            status => 400,
-            json   => {
-                Error => {
-                    message =>
-                      "The total debit and credit amounts do not match.",
-                },
-            },
-        );
-    }
-
-    $form->{rowcount} = $i - 1;    # Count of number of lines
+    # Adjust row count based on the counter
+    $form->{rowcount} = $i - 1;
 
     # Call the function to add the transaction
     my $id = GL->post_transaction( $c->slconfig, $form );
