@@ -288,7 +288,7 @@ $api->get(
 );
 
 $api->post(
-    '/:client/gl/transactions/:id?' => sub {
+    '/:client/gl/transactions/:id' => { id => undef } => sub {
         my $c      = shift;
         my $client = $c->param('client');
         my $id     = $c->param('id');
