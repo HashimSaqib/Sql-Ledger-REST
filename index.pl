@@ -98,13 +98,38 @@ $api->get(
         $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
         my $dbs = $c->dbs($client);
 
+        # Searching Parameters
         my $startDate   = $c->param('startDate');
         my $endDate     = $c->param('endDate');
         my $description = $c->param('description');
         my $notes       = $c->param('notes');
         my $reference   = $c->param('reference');
-        my $accno       = $c->param('accno');    # Add the accno query parameter
+        my $accno       = $c->param('accno');
 
+        # Pagination Parameters
+        my $limit = $c->param('limit') || 20;        # Default value is 20
+        my $page  = $c->param('page')  || 1;         # Default value is 1
+        my $sort  = $c->param('sort')  || 'DESC';    # Default value is DESC
+
+        # Validate the Parameters
+        unless ( $limit =~ /^\d+$/
+            && $page =~ /^\d+$/
+            && ( $sort eq 'ASC' || $sort eq 'DESC' ) )
+        {
+            return $c->render(
+                status => 400,
+                json   => {
+                    error => {
+                        message => "Invalid pagination or sort parameters."
+                    }
+                }
+            );
+
+        }
+
+        my $offset = ( $page - 1 ) * $limit;
+
+        # Validate Date
         if ($startDate) { $c->validate_date($startDate) or return; }
         if ($endDate)   { $c->validate_date($endDate)   or return; }
 
@@ -140,6 +165,10 @@ $api->get(
         if (@conditions) {
             $query .= ' WHERE ' . join( ' AND ', @conditions );
         }
+
+        $query .= " ORDER BY transdate $sort";
+        $query .= " LIMIT ? OFFSET ?";
+        push @query_params, $limit, $offset;
 
 # If accno is specified, collect transaction IDs that involve the specified account number
         my %transaction_ids_for_accno;
@@ -291,7 +320,8 @@ $api->post(
     '/:client/gl/transactions/:id' => { id => undef } => sub {
         my $c      = shift;
         my $client = $c->param('client');
-        my $id     = $c->param('id');
+        my $id;
+        $id = $c->param('id');
         return unless $c->client_check($client);
         my $data = $c->req->json;
 
@@ -476,7 +506,7 @@ $api->post(
         $form->{rowcount} = $i - 1;
 
         # Call the function to add the transaction
-        my $id = GL->post_transaction( $c->slconfig, $form );
+        $id = GL->post_transaction( $c->slconfig, $form );
 
         warn $c->dumper($form);
 
