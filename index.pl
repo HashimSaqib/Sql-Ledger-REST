@@ -581,7 +581,8 @@ $api->post(
             }
         }
 
-        my $status_code = $id ? 200 : 201;    # 200 for update, 201 for create
+        my $status_code =
+          $c->param('id') ? 200 : 201;    # 200 for update, 201 for create
 
         $c->render(
             status => $status_code,
