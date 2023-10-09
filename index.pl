@@ -112,7 +112,7 @@ $api->get(
         my $sort  = $c->param('sort')  || 'DESC';    # Default value is DESC
 
         # Validate the Parameters
-        unless ( $limit =~ /^\d+$/
+        unless ( ( $limit =~ /^\d+$/ || $limit == -1 )
             && $page =~ /^\d+$/
             && ( $sort eq 'ASC' || $sort eq 'DESC' ) )
         {
