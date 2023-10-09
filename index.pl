@@ -167,8 +167,11 @@ $api->get(
         }
 
         $query .= " ORDER BY transdate $sort";
-        $query .= " LIMIT ? OFFSET ?";
-        push @query_params, $limit, $offset;
+
+        if ( $limit != -1 ) {
+            $query .= " LIMIT ? OFFSET ?";
+            push @query_params, $limit, $offset;
+        }
 
 # If accno is specified, collect transaction IDs that involve the specified account number
         my %transaction_ids_for_accno;
