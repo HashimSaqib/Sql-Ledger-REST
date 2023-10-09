@@ -317,7 +317,24 @@ $api->get(
 );
 
 $api->post(
-    '/:client/gl/transactions/:id' => { id => undef } => sub {
+    '/:client/gl/transactions' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        my $id;
+        $id = $c->param('id');
+        return unless $c->client_check($client);
+        my $data = $c->req->json;
+
+        # Create the DBIx::Simple handle
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+        my $dbs = $c->dbs($client);
+
+        api_gl_transaction( $c, $dbs, $data );
+    }
+);
+
+$api->put(
+    '/:client/gl/transactions/:id' => sub {
         my $c      = shift;
         my $client = $c->param('client');
         my $id;
@@ -344,192 +361,227 @@ $api->post(
                 );
             }
         }
+        api_gl_transaction( $c, $dbs, $data, $id );
+    }
+);
 
-        # Check if 'transdate' is present in the data
-        unless ( exists $data->{transdate} ) {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message => "The 'transdate' field is required.",
-                    },
+sub api_gl_transaction () {
+    my ( $c, $dbs, $data, $id ) = @_;
+
+    # Check if 'transdate' is present in the data
+    unless ( exists $data->{transdate} ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message => "The 'transdate' field is required.",
                 },
-            );
-        }
+            },
+        );
+    }
 
-        my $transdate = $data->{transdate};
+    my $transdate = $data->{transdate};
 
-        # Validate 'transdate' format (ISO date format)
-        unless ( $transdate =~ /^\d{4}-\d{2}-\d{2}$/ ) {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message =>
+    # Validate 'transdate' format (ISO date format)
+    unless ( $transdate =~ /^\d{4}-\d{2}-\d{2}$/ ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message =>
 "Invalid 'transdate' format. Expected ISO 8601 date format (YYYY-MM-DD).",
-                    },
                 },
-            );
-        }
+            },
+        );
+    }
 
-        # Check if 'lines' is present and is an array reference
-        unless ( exists $data->{lines} && ref $data->{lines} eq 'ARRAY' ) {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message => "The 'lines' array is required.",
-                    },
+    # Check if 'lines' is present and is an array reference
+    unless ( exists $data->{lines} && ref $data->{lines} eq 'ARRAY' ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message => "The 'lines' array is required.",
                 },
-            );
-        }
+            },
+        );
+    }
 
-        # Find the default currency from the database
-        my $default_result = $dbs->query("SELECT curr FROM curr WHERE rn = 1");
-        my $default_row    = $default_result->hash;
-        unless ($default_row) {
-            die "Default currency not found in the database!";
-        }
-        my $default_currency = $default_row->{curr};
+    # Find the default currency from the database
+    my $default_result = $dbs->query("SELECT curr FROM curr WHERE rn = 1");
+    my $default_row    = $default_result->hash;
+    unless ($default_row) {
+        die "Default currency not found in the database!";
+    }
+    my $default_currency = $default_row->{curr};
 
 # Check if the provided currency exists in the 'curr' column of the database table
-        my $result = $dbs->query( "SELECT rn, curr FROM curr WHERE curr = ?",
-            $data->{curr} );
-        unless ( $result->rows ) {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message => "The specified currency does not exist.",
-                    },
+    my $result =
+      $dbs->query( "SELECT rn, curr FROM curr WHERE curr = ?", $data->{curr} );
+    unless ( $result->rows ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message => "The specified currency does not exist.",
                 },
-            );
-        }
+            },
+        );
+    }
 
  # If the provided currency is not the default currency, check for exchange rate
-        my $row = $result->hash;
-        if ( $row->{curr} ne $default_currency
-            && !exists $data->{exchangeRate} )
-        {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message =>
+    my $row = $result->hash;
+    if ( $row->{curr} ne $default_currency
+        && !exists $data->{exchangeRate} )
+    {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message =>
 "A non-default currency has been used. Exchange rate is required.",
-                    },
                 },
-            );
-        }
+            },
+        );
+    }
 
-        # Create a new form
-        my $form = new Form;
+    # Create a new form
+    my $form = new Form;
 
-        if ($id) {
-            $form->{id} = $id;
-        }
+    if ($id) {
+        $form->{id} = $id;
+    }
 
-        if ( !$data->{department} ) { $data->{department} = 0 }
+    if ( !$data->{department} ) { $data->{department} = 0 }
 
-        # Load the input data into the form
-        $form->{reference}       = $data->{reference};
-        $form->{department}      = $data->{department};
-        $form->{notes}           = $data->{notes};
-        $form->{description}     = $data->{description};
-        $form->{curr}            = $data->{curr};
-        $form->{currency}        = $data->{curr};
-        $form->{exchangerate}    = $data->{exchangeRate};
-        $form->{transdate}       = $transdate;
-        $form->{defaultcurrency} = $default_currency;
+    # Load the input data into the form
+    $form->{reference}       = $data->{reference};
+    $form->{department}      = $data->{department};
+    $form->{notes}           = $data->{notes};
+    $form->{description}     = $data->{description};
+    $form->{curr}            = $data->{curr};
+    $form->{currency}        = $data->{curr};
+    $form->{exchangerate}    = $data->{exchangeRate};
+    $form->{transdate}       = $transdate;
+    $form->{defaultcurrency} = $default_currency;
 
-        my $total_debit  = 0;
-        my $total_credit = 0;
-        my $i            = 1;
-        foreach my $line ( @{ $data->{lines} } ) {
+    my $total_debit  = 0;
+    my $total_credit = 0;
+    my $i            = 1;
+    foreach my $line ( @{ $data->{lines} } ) {
 
 # Subtract taxAmount from debit or credit if taxAccount and taxAmount are defined
-            if ( defined $line->{taxAccount} && defined $line->{taxAmount} ) {
+        if ( defined $line->{taxAccount} && defined $line->{taxAmount} ) {
 
-                $total_debit  += $line->{debit};
-                $total_credit += $line->{credit};
+            $total_debit  += $line->{debit};
+            $total_credit += $line->{credit};
 
-                $line->{debit} -=
-                  ( $line->{debit} > 0 ? $line->{taxAmount} : 0 );
-                $line->{credit} -=
-                  ( $line->{credit} > 0 ? $line->{taxAmount} : 0 );
+            $line->{debit} -=
+              ( $line->{debit} > 0 ? $line->{taxAmount} : 0 );
+            $line->{credit} -=
+              ( $line->{credit} > 0 ? $line->{taxAmount} : 0 );
 
-                # Add new tax line to $form
-                if ( $line->{debit} > 0 ) {
-                    $form->{"debit_$i"}  = $line->{taxAmount};
-                    $form->{"credit_$i"} = 0;
-                }
-                else {
-                    $form->{"debit_$i"}  = 0;
-                    $form->{"credit_$i"} = $line->{taxAmount};
-                }
-
-                $form->{"accno_$i"}  = $line->{taxAccount};
-                $form->{"tax_$i"}    = 'auto';
-                $form->{"memo_$i"}   = $line->{memo};
-                $form->{"source_$i"} = $line->{source};
-
-                $i++;    # Increment the counter after processing the tax line
+            # Add new tax line to $form
+            if ( $line->{debit} > 0 ) {
+                $form->{"debit_$i"}  = $line->{taxAmount};
+                $form->{"credit_$i"} = 0;
+            }
+            else {
+                $form->{"debit_$i"}  = 0;
+                $form->{"credit_$i"} = $line->{taxAmount};
             }
 
-            # Process the regular line
-            $form->{"debit_$i"}     = $line->{debit};
-            $form->{"credit_$i"}    = $line->{credit};
-            $form->{"accno_$i"}     = $line->{accno};
-            $form->{"tax_$i"}       = $line->{taxAccount};
-            $form->{"taxamount_$i"} = $line->{taxAmount};
-            $form->{"cleared_$i"}   = $line->{cleared};
-            $form->{"memo_$i"}      = $line->{memo};
-            $form->{"source_$i"}    = $line->{source};
+            $form->{"accno_$i"}  = $line->{taxAccount};
+            $form->{"tax_$i"}    = 'auto';
+            $form->{"memo_$i"}   = $line->{memo};
+            $form->{"source_$i"} = $line->{source};
 
-            $i++;    # Increment the counter after processing the regular line
+            $i++;    # Increment the counter after processing the tax line
         }
 
-        # Check if total_debit equals total_credit
-        unless ( $total_debit == $total_credit ) {
-            return $c->render(
-                status => 400,
-                json   => {
-                    Error => {
-                        message =>
+        # Process the regular line
+        $form->{"debit_$i"}     = $line->{debit};
+        $form->{"credit_$i"}    = $line->{credit};
+        $form->{"accno_$i"}     = $line->{accno};
+        $form->{"tax_$i"}       = $line->{taxAccount};
+        $form->{"taxamount_$i"} = $line->{taxAmount};
+        $form->{"cleared_$i"}   = $line->{cleared};
+        $form->{"memo_$i"}      = $line->{memo};
+        $form->{"source_$i"}    = $line->{source};
+
+        $i++;    # Increment the counter after processing the regular line
+    }
+
+    # Check if total_debit equals total_credit
+    unless ( $total_debit == $total_credit ) {
+        return $c->render(
+            status => 400,
+            json   => {
+                Error => {
+                    message =>
 "Total Debits ($total_debit) must equal Total Credits ($total_credit).",
-                    },
                 },
-            );
-        }
+            },
+        );
+    }
 
-        # Adjust row count based on the counter
-        $form->{rowcount} = $i - 1;
+    # Adjust row count based on the counter
+    $form->{rowcount} = $i - 1;
 
-        # Call the function to add the transaction
-        $id = GL->post_transaction( $c->slconfig, $form );
+    # Call the function to add the transaction
+    $id = GL->post_transaction( $c->slconfig, $form );
 
-        warn $c->dumper($form);
+    warn $c->dumper($form);
 
-        my $ts =
-          $dbs->query( "SELECT ts from gl WHERE id = ?", $form->{id} )
-          ->hash->{ts};
+    my $ts =
+      $dbs->query( "SELECT ts from gl WHERE id = ?", $form->{id} )->hash->{ts};
 
-        # Convert the Form object back into a JSON-like structure
-        my $response_json = {
-            id           => $form->{id},
-            reference    => $form->{reference},
-            department   => $form->{department},
-            notes        => $form->{notes},
-            description  => $form->{description},
-            curr         => $form->{curr},
-            exchangeRate => $form->{exchangerate},
-            transdate    => $form->{transdate},
-            employeeId   => $form->{employee_id},
-            ts           => $ts,
-            lines        => []
-        };
+    # Convert the Form object back into a JSON-like structure
+    my $response_json = {
+        id           => $form->{id},
+        reference    => $form->{reference},
+        department   => $form->{department},
+        notes        => $form->{notes},
+        description  => $form->{description},
+        curr         => $form->{curr},
+        exchangeRate => $form->{exchangerate},
+        transdate    => $form->{transdate},
+        employeeId   => $form->{employee_id},
+        ts           => $ts,
+        lines        => []
+    };
 
-        for my $i ( 1 .. $form->{rowcount} ) {
+    for my $i ( 1 .. $form->{rowcount} ) {
+
+        my $taxAccount =
+          $form->{"tax_$i"} == 0
+          ? undef
+          : $form->{"tax_$i"};    # Set to undef if the tax value is 0
+
+        push @{ $response_json->{lines} },
+          {
+            debit         => $form->{"debit_$i"},
+            credit        => $form->{"credit_$i"},
+            accno         => $form->{"accno_$i"},
+            taxAccount    => $taxAccount,
+            taxAmount     => $form->{"taxamount_$i"},
+            cleared       => $form->{"cleared_$i"},
+            memo          => $form->{"memo_$i"},
+            source        => $form->{"source_$i"},
+            fxTransaction => \0,
+          };
+    }
+
+    # If the transaction currency isn't the default currency
+    if ( $form->{curr} ne $form->{defaultcurrency} ) {
+
+        # Query the acc_trans table for the relevant entries
+        my $fx_trans_entries = $dbs->query(
+"SELECT amount, chart_id, tax_chart_id, taxamount, cleared, memo, source FROM acc_trans WHERE trans_id = ? AND fx_transaction = true",
+            $form->{id}
+        );
+
+        while ( my $entry = $fx_trans_entries->hash ) {
 
             my $taxAccount =
               $form->{"tax_$i"} == 0
@@ -538,58 +590,27 @@ $api->post(
 
             push @{ $response_json->{lines} },
               {
-                debit         => $form->{"debit_$i"},
-                credit        => $form->{"credit_$i"},
-                accno         => $form->{"accno_$i"},
+                debit         => $entry->{amount} > 0 ? $entry->{amount}  : 0,
+                credit        => $entry->{amount} < 0 ? -$entry->{amount} : 0,
+                accno         => $entry->{chart_id},
                 taxAccount    => $taxAccount,
-                taxAmount     => $form->{"taxamount_$i"},
-                cleared       => $form->{"cleared_$i"},
-                memo          => $form->{"memo_$i"},
-                source        => $form->{"source_$i"},
-                fxTransaction => \0,
+                taxAmount     => $entry->{taxamount},
+                cleared       => $entry->{cleared},
+                memo          => $entry->{memo},
+                source        => $entry->{source},
+                fxTransaction => \1,
               };
         }
-
-        # If the transaction currency isn't the default currency
-        if ( $form->{curr} ne $form->{defaultcurrency} ) {
-
-            # Query the acc_trans table for the relevant entries
-            my $fx_trans_entries = $dbs->query(
-"SELECT amount, chart_id, tax_chart_id, taxamount, cleared, memo, source FROM acc_trans WHERE trans_id = ? AND fx_transaction = true",
-                $form->{id}
-            );
-
-            while ( my $entry = $fx_trans_entries->hash ) {
-
-                my $taxAccount =
-                  $form->{"tax_$i"} == 0
-                  ? undef
-                  : $form->{"tax_$i"};    # Set to undef if the tax value is 0
-
-                push @{ $response_json->{lines} },
-                  {
-                    debit  => $entry->{amount} > 0 ? $entry->{amount}  : 0,
-                    credit => $entry->{amount} < 0 ? -$entry->{amount} : 0,
-                    accno         => $entry->{chart_id},
-                    taxAccount    => $taxAccount,
-                    taxAmount     => $entry->{taxamount},
-                    cleared       => $entry->{cleared},
-                    memo          => $entry->{memo},
-                    source        => $entry->{source},
-                    fxTransaction => \1,
-                  };
-            }
-        }
-
-        my $status_code =
-          $c->param('id') ? 200 : 201;    # 200 for update, 201 for create
-
-        $c->render(
-            status => $status_code,
-            json   => $response_json,
-        );
     }
-);
+
+    my $status_code =
+      $c->param('id') ? 200 : 201;    # 200 for update, 201 for create
+
+    $c->render(
+        status => $status_code,
+        json   => $response_json,
+    );
+}
 
 $api->delete(
     '/:client/gl/transactions/:id' => sub {
