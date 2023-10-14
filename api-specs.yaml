@@ -1,0 +1,339 @@
+openapi: 3.0.0
+info:
+  version: "1"
+  title: Sql Ledger Rest API
+  description: Sql Ledger Rest API
+servers:
+  - url: "https://api.mnapk.com/api/client/{client}"
+    description: Testing Server
+    variables:
+      client:
+        default: ledger28
+        description: Client parameter for testing
+tags:
+  - name: General Ledger Routes
+    description: Endpoints related to General Ledger
+components:
+  schemas:
+    GLTransactionBase:
+      type: object
+      properties:
+        approved:
+          type: integer
+        curr:
+          type: string
+        department:
+          type: integer
+        description:
+          type: string
+        exchangeRate:
+          type: number
+        employeeId:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/GLTransactionLine"
+        notes:
+          type: string
+        reference:
+          type: string
+        transdate:
+          type: string
+        ts:
+          type: string
+    GLTransactionLine:
+      type: object
+      properties:
+        accno:
+          type: string
+        cleared:
+          type: string
+        credit:
+          type: number
+        debit:
+          type: number
+        fxTransaction:
+          type: number
+        memo:
+          type: string
+        source:
+          type: string
+        taxAccount:
+          type: integer
+        taxAmount:
+          type: number
+    GLTransaction:
+      allOf:
+        - $ref: "#/components/schemas/GLTransactionBase"
+        - type: object
+          properties:
+            id:
+              type: integer
+paths:
+  "/gl/transactions/":
+    get:
+      tags:
+        - General Ledger Routes
+      summary: Get all GL transactions
+      parameters:
+        - name: startDate
+          in: query
+          description: The start date to filter transactions
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          description: The end date to filter transactions
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: description
+          in: query
+          description: Text to filter by description
+          required: false
+          schema:
+            type: string
+        - name: notes
+          in: query
+          description: Text to filter by notes
+          required: false
+          schema:
+            type: string
+        - name: reference
+          in: query
+          description: Text to filter by reference
+          required: false
+          schema:
+            type: string
+        - name: accno
+          in: query
+          description: Search On Account Number. All GL entries with at least one transaction with the specified account number will be included.
+          required: false
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: The number of records to return. -1 to return all items.
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: page
+          in: query
+          description: The page number to return
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: sort
+          in: query
+          description: The sort order for returned records (ASC or DESC) based on transdate
+          required: false
+          schema:
+            type: string
+            default: DESC
+            enum:
+              - ASC
+              - DESC
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GLTransaction"
+        "400":
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "404":
+          description: No transactions found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    post:
+      tags:
+        - General Ledger Routes
+      summary: Create a new GL transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/GLTransactionBase"
+                - type: object
+                  required:
+                    - transdate
+                    - lines
+                  properties:
+                    lines:
+                      type: array
+                      minItems: 2
+                      items:
+                        $ref: "#/components/schemas/GLTransactionLine"
+      responses:
+        "201":
+          description: The GL transaction was successfully created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GLTransaction"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: At least two items are required in LINES.
+
+  "/gl/transactions/{id}":
+    get:
+      tags:
+        - General Ledger Routes
+      summary: Get an individual GL transaction
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: Unique identifier of the GL transaction
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GLTransaction"
+        "404":
+          description: The requested GL transaction was not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+
+    put:
+      tags:
+        - General Ledger Routes
+      summary: Update a GL transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier for the GL transaction to update.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/GLTransactionBase"
+                - type: object
+                  required:
+                    - transdate
+                    - lines
+                  properties:
+                    lines:
+                      type: array
+                      minItems: 2
+                      items:
+                        $ref: "#/components/schemas/GLTransactionLine"
+      responses:
+        "200":
+          description: The GL transaction was successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GLTransaction"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: At least two items are required in LINES.
+        "404":
+          description: GL transaction not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: The GL transaction with the provided ID does not exist.
+
+    delete:
+      tags:
+        - General Ledger Routes
+      summary: Delete a GL transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier for the GL transaction to delete.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The GL transaction was successfully deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Successfully deleted the transaction with ID x.
+        "404":
+          description: GL transaction not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: The GL transaction with the provided ID does not exist.
