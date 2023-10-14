@@ -502,6 +502,22 @@ sub api_gl_transaction () {
             $i++;    # Increment the counter after processing the tax line
         }
 
+        my $acc_id =
+          $db->query( "SELECT id from chart WHERE accno = ?", $line->{accno} );
+
+        if ( !$acc_id ) {
+            return $c->render(
+                status => 400,
+                json   => {
+                    Error => {
+                            message => "Account with the accno "
+                          . $line->{accno}
+                          . " does not exist.",
+                    },
+                },
+            );
+        }
+
         # Process the regular line
         $form->{"debit_$i"}     = $line->{debit};
         $form->{"credit_$i"}    = $line->{credit};
