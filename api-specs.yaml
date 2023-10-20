@@ -314,16 +314,8 @@ paths:
           schema:
             type: integer
       responses:
-        "200":
-          description: The GL transaction was successfully deleted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Successfully deleted the transaction with ID x.
+        "204":
+          description: Successfully Deleted.
         "404":
           description: GL transaction not found
           content:

@@ -321,10 +321,9 @@ $api->get(
 
 $api->post(
     '/:client/gl/transactions' => sub {
-        my $c      = shift;
+        my $c = shift;
+        $c->app->log->error("Check");
         my $client = $c->param('client');
-        my $id;
-        $id = $c->param('id');
         return unless $c->client_check($client);
         my $data = $c->req->json;
 
@@ -503,7 +502,7 @@ sub api_gl_transaction () {
         }
 
         my $acc_id =
-          $db->query( "SELECT id from chart WHERE accno = ?", $line->{accno} );
+          $dbs->query( "SELECT id from chart WHERE accno = ?", $line->{accno} );
 
         if ( !$acc_id ) {
             return $c->render(
@@ -667,12 +666,7 @@ $api->delete(
         # Delete the entry from the gl table
         $dbs->query( "DELETE FROM gl WHERE id = ?", $id );
 
-        $c->render(
-            status => 200,
-            json   => {
-                message => "Successfully deleted the transaction with ID $id."
-            }
-        );
+        $c->render( status => 204, data => '' );
     }
 );
 
