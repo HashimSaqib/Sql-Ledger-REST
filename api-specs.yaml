@@ -4,7 +4,7 @@ info:
   title: Sql Ledger Rest API
   description: Sql Ledger Rest API
 servers:
-  - url: "https://api.mnapk.com/api/client/{client}"
+  - url: "https://sqlledger.hashimsaqib.com/api/client/{client}"
     description: Testing Server
     variables:
       client:
