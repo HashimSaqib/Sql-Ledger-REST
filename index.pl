@@ -11,7 +11,6 @@ use Mojo::Util qw(unquote);
 use DBI;
 use DBIx::Simple;
 use XML::Simple;
-use Data::Dumper;
 use SL::Form;
 use SL::AM;
 use SL::CT;
