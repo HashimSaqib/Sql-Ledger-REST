@@ -87,6 +87,14 @@ my $r = app->routes;
 
 my $api = $r->under('/api/client');
 
+
+
+#########################
+####                 #### 
+#### GL Transactions #### 
+####                 ####
+#########################
+
 $api->get(
     '/:client/gl/transactions' => sub {
         my $c      = shift;
@@ -668,5 +676,11 @@ $api->delete(
         $c->render( status => 204, data => '' );
     }
 );
+
+#########################
+####                 #### 
+####      Chart      #### 
+####                 ####
+#########################
 
 app->start;
