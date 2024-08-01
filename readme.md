@@ -26,4 +26,4 @@ This project is built upon the [Run my accounts branch of sql ledger](https://gi
 
 ## Contact
 
-For issues, queries, and suggestions, please raise an issue on the GitHub repository.
+For issues, queries, and suggestions, please raise an issue on the GitHub repository, [email me at hashim1saqib@gmail.com](mailto:hashim1saqib@gmail.com) or [reach out to me at hashimsaqib.com](https://hashimsaqib.com)
