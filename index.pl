@@ -96,7 +96,7 @@ my $api = $r->under('/api/client');
 #########################
 
 
-$api->get('/:client/gl/transaction_lines' => sub {
+$api->get('/:client/gl/transactions/lines' => sub {
     my $c      = shift;
     my $params = $c->req->params->to_hash;
     my $client = $c->param('client');

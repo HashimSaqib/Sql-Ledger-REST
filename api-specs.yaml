@@ -15,9 +15,11 @@ tags:
     description: Endpoints related to General Ledger
 components:
   schemas:
-    GLTransactionBase:
+    GLTransaction:
       type: object
       properties:
+        id:
+          type: integer
         approved:
           type: integer
         curr:
@@ -33,7 +35,26 @@ components:
         lines:
           type: array
           items:
-            $ref: "#/components/schemas/GLTransactionLine"
+            type: object
+            properties:
+              accno:
+                type: string
+              cleared:
+                type: string
+              credit:
+                type: number
+              debit:
+                type: number
+              fxTransaction:
+                type: number
+              memo:
+                type: string
+              source:
+                type: string
+              taxAccount:
+                type: integer
+              taxAmount:
+                type: number
         notes:
           type: string
         reference:
@@ -45,31 +66,76 @@ components:
     GLTransactionLine:
       type: object
       properties:
+        accdescription:
+          type: string
         accno:
           type: string
+        amount:
+          type: number
         cleared:
+          type: string
+        contra:
           type: string
         credit:
           type: number
+        curr:
+          type: string
+        db:
+          type: string
         debit:
           type: number
-        fxTransaction:
+        department:
+          type: string
+        description:
+          type: string
+        exchangerate:
           type: number
+        fx_transaction:
+          type: number
+        gifi_accno:
+          type: string
+        gifi_contra:
+          type: string
+        id:
+          type: integer
+        intnotes:
+          type: string
+        invoice:
+          type: integer
+        lineitem:
+          type: string
+        link:
+          type: string
+        log:
+          type: string
         memo:
+          type: string
+        module:
+          type: string
+        notes:
+          type: string
+        payment_id:
+          type: integer
+        projectnumber:
+          type: string
+        reference:
           type: string
         source:
           type: string
-        taxAccount:
-          type: integer
-        taxAmount:
+        tax:
           type: number
-    GLTransaction:
-      allOf:
-        - $ref: "#/components/schemas/GLTransactionBase"
-        - type: object
-          properties:
-            id:
-              type: integer
+        taxamount:
+          type: number
+        till:
+          type: string
+        transdate:
+          type: string
+        ts:
+          type: string
+        type:
+          type: string
+        vcnumber:
+          type: string
 paths:
   "/gl/transactions/":
     get:
@@ -175,18 +241,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: "#/components/schemas/GLTransactionBase"
-                - type: object
-                  required:
-                    - transdate
-                    - lines
-                  properties:
-                    lines:
-                      type: array
-                      minItems: 2
-                      items:
-                        $ref: "#/components/schemas/GLTransactionLine"
+              $ref: "#/components/schemas/GLTransaction"
       responses:
         "201":
           description: The GL transaction was successfully created
@@ -256,18 +311,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: "#/components/schemas/GLTransactionBase"
-                - type: object
-                  required:
-                    - transdate
-                    - lines
-                  properties:
-                    lines:
-                      type: array
-                      minItems: 2
-                      items:
-                        $ref: "#/components/schemas/GLTransactionLine"
+              $ref: "#/components/schemas/GLTransaction"
       responses:
         "200":
           description: The GL transaction was successfully updated
@@ -329,3 +373,183 @@ paths:
                       message:
                         type: string
                         example: The GL transaction with the provided ID does not exist.
+
+  "/gl/transactions/lines":
+    get:
+      tags:
+        - General Ledger Routes
+      summary: Get GL transaction lines with filters
+      parameters:
+        - name: reference
+          in: query
+          description: Filter by reference
+          required: false
+          schema:
+            type: string
+        - name: description
+          in: query
+          description: Filter by description
+          required: false
+          schema:
+            type: string
+        - name: projectnumber
+          in: query
+          description: Filter by project number
+          required: false
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: Filter by name
+          required: false
+          schema:
+            type: string
+        - name: vcnumber
+          in: query
+          description: Filter by vendor or customer number
+          required: false
+          schema:
+            type: string
+        - name: department
+          in: query
+          description: Filter by department
+          required: false
+          schema:
+            type: string
+        - name: fx_transaction
+          in: query
+          description: Filter by foreign exchange transaction status
+          required: false
+          schema:
+            type: number
+        - name: lineitem
+          in: query
+          description: Filter by line item
+          required: false
+          schema:
+            type: string
+        - name: source
+          in: query
+          description: Filter by source
+          required: false
+          schema:
+            type: string
+        - name: accnofrom
+          in: query
+          description: Filter by account number from
+          required: false
+          schema:
+            type: string
+        - name: accnoto
+          in: query
+          description: Filter by account number to
+          required: false
+          schema:
+            type: string
+        - name: memo
+          in: query
+          description: Filter by memo
+          required: false
+          schema:
+            type: string
+        - name: datefrom
+          in: query
+          description: Filter by date from
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: dateto
+          in: query
+          description: Filter by date to
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: amountfrom
+          in: query
+          description: Filter by amount from
+          required: false
+          schema:
+            type: number
+        - name: amountto
+          in: query
+          description: Filter by amount to
+          required: false
+          schema:
+            type: number
+        - name: notes
+          in: query
+          description: Filter by notes
+          required: false
+          schema:
+            type: string
+        - name: intnotes
+          in: query
+          description: Filter by internal notes
+          required: false
+          schema:
+            type: string
+        - name: accno
+          in: query
+          description: Filter by account number
+          required: false
+          schema:
+            type: string
+        - name: gifi_accno
+          in: query
+          description: Filter by GIFI account number
+          required: false
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: Filter by category
+          required: false
+          schema:
+            type: string
+        - name: onhold
+          in: query
+          description: Filter by on hold status
+          required: false
+          schema:
+            type: string
+        - name: include_log
+          in: query
+          description: Include log in response
+          required: false
+          schema:
+            type: boolean
+        - name: filter_amounts
+          in: query
+          description: Filter by amounts
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Successful response with GL transaction lines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GLTransactionLine"
+        "400":
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "404":
+          description: No transaction lines found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
