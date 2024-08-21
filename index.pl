@@ -141,8 +141,8 @@ $api->get(
         my $dbs = $c->dbs($client);
 
         # Searching Parameters
-        my $startDate   = $c->param('startDate');
-        my $endDate     = $c->param('endDate');
+        my $datefrom   = $c->param('datefrom');
+        my $dateto     = $c->param('dateto');
         my $description = $c->param('description');
         my $notes       = $c->param('notes');
         my $reference   = $c->param('reference');
@@ -172,21 +172,21 @@ $api->get(
         my $offset = ( $page - 1 ) * $limit;
 
         # Validate Date
-        if ($startDate) { $c->validate_date($startDate) or return; }
-        if ($endDate)   { $c->validate_date($endDate)   or return; }
+        if ($datefrom) { $c->validate_date($datefrom) or return; }
+        if ($dateto)   { $c->validate_date($dateto)   or return; }
 
         my $query =
 'SELECT id, reference, transdate, description, notes, curr, department_id AS department, approved, ts, exchangerate AS exchangeRate, employee_id FROM gl';
         my @query_params;
 
         my @conditions;
-        if ( $startDate && $endDate ) {
+        if ( $datefrom && $dateto ) {
             push @conditions, 'transdate BETWEEN ? AND ?';
-            push @query_params, $startDate, $endDate;
+            push @query_params, $datefrom, $dateto;
         }
-        elsif ($startDate) {
+        elsif ($datefrom) {
             push @conditions,   'transdate = ?';
-            push @query_params, $startDate;
+            push @query_params, $datefrom;
         }
 
         if ($description) {
@@ -245,7 +245,7 @@ $api->get(
             while ( my $line = $entries_results->hash ) {
                 my $debit         = $line->{amount} < 0  ? -$line->{amount} : 0;
                 my $credit        = $line->{amount} >= 0 ? $line->{amount}  : 0;
-                my $fxTransaction = $line->{fx_transaction} == 1 ? \1 : \0;
+                my $fx_transaction = $line->{fx_transaction} == 1 ? \1 : \0;
                 my $taxAccount =
                   $line->{tax_chart_id} == 0 ? undef : $line->{tax_chart_id};
 
@@ -258,7 +258,7 @@ $api->get(
                     source        => $line->{source},
                     taxAccount    => $taxAccount,
                     taxAmount     => $line->{taxamount},
-                    fxTransaction => $fxTransaction,
+                    fx_transaction => $fx_transaction,
                     cleared       => $line->{cleared},
                   };
             }
@@ -333,8 +333,8 @@ $api->get(
                 $new_line{memo}      = $line->{memo};
                 $new_line{source}    = $line->{source};
 
-                # Modify fxTransaction assignment based on fx_transaction value
-                $new_line{fxTransaction} =
+                # Modify fx_transaction assignment based on fx_transaction value
+                $new_line{fx_transaction} =
                   $line->{fx_transaction} == 1 ? \1 : \0;
 
                 $line = \%new_line;
@@ -628,7 +628,7 @@ sub api_gl_transaction () {
             cleared       => $form->{"cleared_$i"},
             memo          => $form->{"memo_$i"},
             source        => $form->{"source_$i"},
-            fxTransaction => \0,
+            fx_transaction => \0,
           };
     }
 
@@ -658,7 +658,7 @@ sub api_gl_transaction () {
                 cleared       => $entry->{cleared},
                 memo          => $entry->{memo},
                 source        => $entry->{source},
-                fxTransaction => \1,
+                fx_transaction => \1,
               };
         }
     }
