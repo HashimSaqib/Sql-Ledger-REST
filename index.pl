@@ -110,13 +110,15 @@ $api->get('/:client/gl/transactions/lines' => sub {
     GL->transactions( $c->slconfig, $form );
 
     # Check if the result is undefined, empty, or has no entries
-    if (  !defined $form->{GL}
-        || ref $form->{GL} ne 'ARRAY'
-        || scalar( @{ $form->{GL} } ) == 0 )
+    if (  !defined($form->{GL})
+        || ref($form->{GL}) ne 'ARRAY'
+        || scalar(@{ $form->{GL} }) == 0 )
     {
         return $c->render(
             status => 404,
-            json   => { error => "No transactions found" }
+            json   => { error => 
+            { message => "No transactions found" },
+            }
         );
     }
 
@@ -147,29 +149,6 @@ $api->get(
         my $notes       = $c->param('notes');
         my $reference   = $c->param('reference');
         my $accno       = $c->param('accno');
-
-        # Pagination Parameters
-        my $limit = $c->param('limit') || 20;        # Default value is 20
-        my $page  = $c->param('page')  || 1;         # Default value is 1
-        my $sort  = $c->param('sort')  || 'DESC';    # Default value is DESC
-
-        # Validate the Parameters
-        unless ( ( $limit =~ /^\d+$/ || $limit == -1 )
-            && $page =~ /^\d+$/
-            && ( $sort eq 'ASC' || $sort eq 'DESC' ) )
-        {
-            return $c->render(
-                status => 400,
-                json   => {
-                    error => {
-                        message => "Invalid pagination or sort parameters."
-                    }
-                }
-            );
-
-        }
-
-        my $offset = ( $page - 1 ) * $limit;
 
         # Validate Date
         if ($datefrom) { $c->validate_date($datefrom) or return; }
@@ -208,14 +187,7 @@ $api->get(
             $query .= ' WHERE ' . join( ' AND ', @conditions );
         }
 
-        $query .= " ORDER BY transdate $sort";
-
-        if ( $limit != -1 ) {
-            $query .= " LIMIT ? OFFSET ?";
-            push @query_params, $limit, $offset;
-        }
-
-# If accno is specified, collect transaction IDs that involve the specified account number
+        # If accno is specified, collect transaction IDs that involve the specified account number
         my %transaction_ids_for_accno;
         if ($accno) {
             my $accno_query =
@@ -398,7 +370,7 @@ $api->put(
                 return $c->render(
                     status => 404,
                     json   => {
-                        Error => {
+                        error => {
                             message => "Transaction with ID $id not found."
                         }
                     }
@@ -417,7 +389,7 @@ sub api_gl_transaction () {
         return $c->render(
             status => 400,
             json   => {
-                Error => {
+                error => {
                     message => "The 'transdate' field is required.",
                 },
             },
@@ -431,7 +403,7 @@ sub api_gl_transaction () {
         return $c->render(
             status => 400,
             json   => {
-                Error => {
+                error => {
                     message =>
 "Invalid 'transdate' format. Expected ISO 8601 date format (YYYY-MM-DD).",
                 },
