@@ -690,4 +690,46 @@ $api->delete(
 ####                 ####
 #########################
 
+$api->get('/:client/charts' => sub {
+    my $c      = shift;
+    my $client = $c->param('client');
+
+    return unless $c->client_check($client);
+
+    # Create the DBIx::Simple handle
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+    my $dbs = $c->dbs($client);
+
+    # Get link strings from query parameters (e.g., ?link=AR_tax,AP_tax)
+    my @links = $c->param('link') ? split(',', $c->param('link')) : ();
+
+    # Start with the base query
+    my $sql = "SELECT * FROM chart";
+
+    # If links are provided, add a WHERE clause to filter entries
+    if (@links) {
+        my @conditions;
+        foreach my $link (@links) {
+        }
+        my $where_clause = join(' AND ', @conditions);
+        $sql .= " WHERE $where_clause";
+    }
+
+    # Execute the query with the necessary parameters
+    my $entries = $dbs->query($sql, map { "%$_%" } @links)->hashes;
+
+    if ($entries) {
+        return $c->render(
+            status => 200,
+            json   => $entries
+        );
+    } else {
+        return $c->render(
+            status => 404,
+            json   => { error => { message => "No transactions found" } }
+        );
+    }
+});
+
+
 app->start;

@@ -11,8 +11,10 @@ servers:
         default: ledger28
         description: Client parameter for testing
 tags:
-  - name: General Ledger Routes
+  - name: General Ledger
     description: Endpoints related to General Ledger
+  - name: Charts Of Accounts
+    description: Endpoints related to the Chart Of Accounts
 components:
   schemas:
     GLTransaction:
@@ -136,11 +138,55 @@ components:
           type: string
         vcnumber:
           type: string
+
+    Chart:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the chart record
+        accno:
+          type: string
+          description: Account number associated with the chart record
+        description:
+          type: string
+          description: Description of the chart record
+        charttype:
+          type: string
+          maxLength: 1
+          enum:
+            - A # Account
+            - H # Heading
+          description: Type of chart, either Account (A) or Heading (H)
+        category:
+          type: string
+          maxLength: 1
+          enum:
+            - A # Asset
+            - L # Liability
+            - I # Sale/Income
+            - Q # Capital/Equity
+            - E # Expense
+          description: Category of the chart, such as Asset (A), Liability (L), Sale/Income (I), Capital/Equity (Q), or Expense (E)
+        link:
+          type: string
+          description: Link or reference associated with the chart record
+        gifi_accno:
+          type: string
+          description: GIFI account number associated with the chart record
+        contra:
+          type: boolean
+          description: Indicates if the chart record is a contra account
+        allow_gl:
+          type: string
+          maxLength: 1
+          description: Indicates if the chart record allows general ledger entries
+
 paths:
   "/gl/transactions/lines":
     get:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Get GL transaction lines with filters
       parameters:
         - name: reference
@@ -284,7 +330,7 @@ paths:
   "/gl/transactions/":
     get:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Get all GL transactions
       parameters:
         - name: datefrom
@@ -354,7 +400,7 @@ paths:
                     type: string
     post:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Create a new GL transaction
       requestBody:
         required: true
@@ -385,7 +431,7 @@ paths:
   "/gl/transactions/{id}":
     get:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Get an individual GL transaction
       parameters:
         - in: path
@@ -416,7 +462,7 @@ paths:
 
     put:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Update a GL transaction
       parameters:
         - name: id
@@ -467,7 +513,7 @@ paths:
 
     delete:
       tags:
-        - General Ledger Routes
+        - General Ledger
       summary: Delete a GL transaction
       parameters:
         - name: id
@@ -492,3 +538,59 @@ paths:
                       message:
                         type: string
                         example: The GL transaction with the provided ID does not exist.
+
+  "/charts/":
+    get:
+      tags:
+        - Charts Of Accounts
+      summary: Get a list of all available chart of accounts
+      parameters:
+        - name: link
+          in: query
+          required: false
+          schema:
+            type: string
+            items:
+              type: string
+          description: A comma list of link strings to filter the chart entries. Multiple values can be provided.
+      responses:
+        "200":
+          description: A list of chart of accounts entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Chart"
+        "404":
+          description: No chart entries found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        description: A message indicating that no chart entries were found
+                example:
+                  error:
+                    message: "No transactions found"
+        "400":
+          description: Invalid client or request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        description: A message indicating that the client is invalid or the request is malformed
+                example:
+                  error:
+                    message: "Invalid client or request"
