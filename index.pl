@@ -8,6 +8,7 @@ use Mojolicious::Lite;
 use XML::Hash::XS;
 use Data::Dumper;
 use Mojo::Util qw(unquote);
+use Mojo::JSON qw(decode_json);
 use DBI;
 use DBIx::Simple;
 use XML::Simple;
@@ -726,7 +727,87 @@ $api->get('/:client/charts' => sub {
     } else {
         return $c->render(
             status => 404,
-            json   => { error => { message => "No transactions found" } }
+            json   => { error => { message => "No accounts found" } }
+        );
+    }
+});
+
+
+
+$api->post('/:client/charts' => sub {
+    my $c      = shift;
+    my $client = $c->param('client');
+
+    return unless $c->client_check($client);
+
+    # Create the DBIx::Simple handle
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+    my $dbs = $c->dbs($client);
+
+    # Parse JSON request body
+    my $data = $c->req->json;
+
+    unless ($data) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Invalid JSON in request body" } }
+        );
+    }
+
+    # Get the necessary parameters from the parsed JSON
+    my $accno       = $data->{accno};
+    my $description = $data->{description};
+    my $charttype   = $data->{charttype} // 'A';
+    my $category    = $data->{category};
+    my $link        = $data->{link};
+    my $gifi_accno  = $data->{gifi_accno};
+    my $contra      = $data->{contra} // 'false';
+    my $allow_gl    = $data->{allow_gl};
+
+    # Validate required fields
+    unless ($accno && $description) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Missing required fields: accno, description" } }
+        );
+    }
+
+    # Validate charttype
+    unless ($charttype eq 'A' || $charttype eq 'H') {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Invalid charttype. Must be either 'A' or 'H'" } }
+        );
+    }
+
+    # Validate category
+    my @valid_categories = qw(A L I Q E);
+    unless ($category && length($category) == 1 && grep { $_ eq $category } @valid_categories) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Invalid category. Must be one of 'A', 'L', 'I', 'Q', 'E'" } }
+        );
+    }
+
+    # Prepare SQL for insertion
+    my $sql_insert = "INSERT INTO chart (accno, description, charttype, category, link, gifi_accno, contra, allow_gl) 
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+    # Execute the insertion
+    my $result = $dbs->query($sql_insert, $accno, $description, $charttype, $category, $link, $gifi_accno, $contra, $allow_gl);
+
+    if ($result->affected) {
+        # Retrieve the newly created entry
+        my $new_entry = $dbs->query("SELECT * FROM chart WHERE accno = ?", $accno)->hash;
+
+        return $c->render(
+            status => 201,
+            json   => { message => "Chart entry created successfully", entry => $new_entry }
+        );
+    } else {
+        return $c->render(
+            status => 500,
+            json   => { error => { message => "Failed to create chart entry" } }
         );
     }
 });
