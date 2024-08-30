@@ -24,7 +24,7 @@ sub all_accounts {
 
   my $ref;
   
-  my %defaults = $form->get_defaults($dbh, \@{['precision', 'company']});
+  my %defaults = $form->get_defaults($dbh, \@{['precision', 'company', 'hideaccounts']});
   for (keys %defaults) { $form->{$_} = $defaults{$_} }
  
   my $query = qq|SELECT c.accno,
@@ -53,7 +53,7 @@ sub all_accounts {
   $sth->finish;
 
   $query = qq|SELECT c.id, c.accno, c.description, c.charttype, c.gifi_accno,
-              c.category, c.link, allow_gl,
+              c.category, c.link, c.contra, c.closed,
 	      l.description AS translation
               FROM chart c
 	      LEFT JOIN translation l ON (l.trans_id = c.id AND l.language_code = '$myconfig->{countrycode}')
@@ -89,14 +89,12 @@ sub all_transactions {
   my %defaults = $form->get_defaults($dbh, \@{['precision', 'company']});
   for (keys %defaults) { $form->{$_} = $defaults{$_} }
     
-  # SQLI protection: accno, gifi_accno need to be validated/escaped
-
   # get chart_id
   my $query = qq|SELECT id FROM chart
-                 WHERE accno = |.$dbh->quote($form->{accno}).qq||;
+                 WHERE accno = '$form->{accno}'|;
   if ($form->{accounttype} eq 'gifi') {
     $query = qq|SELECT id FROM chart
-                WHERE gifi_accno = |.$dbh->quote($form->{gifi_accno}).qq||;
+                WHERE gifi_accno = '$form->{gifi_accno}'|;
   }
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
@@ -109,58 +107,31 @@ sub all_transactions {
 
   my $fromdate_where;
   my $todate_where;
-  my $fx_transaction;
 
-  ($form->{fromdate}, $form->{todate}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
-
-  my $subwhere;
-
+  unless ($form->{fromdate} || $form->{todate}) {
+    ($form->{fromdate}, $form->{todate}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
+  }
+  
   if ($form->{fromdate}) {
     $fromdate_where = qq|
                  AND ac.transdate >= '$form->{fromdate}'
-		| if $form->{method} ne 'cash';
-    $subwhere = qq| AND ac.transdate >= '$form->{fromdate}'|;
+		|;
   }
   if ($form->{todate}) {
     $todate_where = qq|
                  AND ac.transdate <= '$form->{todate}'
 		|;
-    $subwhere .= qq| AND ac.transdate <= '$form->{todate}'|;
   }
-
-  my $subquery = qq|
-	AND ac.trans_id IN (
-		SELECT ac.trans_id
-		FROM acc_trans ac
-		JOIN chart c ON (ac.chart_id = c.id)
-		WHERE (c.link LIKE '%AP_paid%' OR c.link LIKE '%AR_paid')
-		AND ac.approved = '1'
-		$subwhere
-  )| if $form->{method} eq 'cash';
-
-  if (!$form->{fx_transaction}){
-    $fx_transaction = qq|
-                AND ac.fx_transaction = '0' 
-|; 
-  }
+  
 
   my $false = ($myconfig->{dbdriver} =~ /Pg/) ? FALSE : q|'0'|;
   
-  # Oracle workaround, use ordinal positions
-  my %ordinal = ( transdate => 5,
-		  reference => 2,
-		  description => 3 );
-
-  my @a = qw(transdate reference description);
-  my $sortorder = $form->sort_order(\@a, \%ordinal);
-
-  my $null;
   my $department_id;
   my $dpt_where;
   my $dpt_join;
   my $union;
   
-  ($null, $department_id) = split /--/, $form->{department};
+  (undef, $department_id) = split /--/, $form->{department};
   
   if ($department_id) {
     $dpt_join = qq|
@@ -174,7 +145,7 @@ sub all_transactions {
   my $project;
   my $project_id;
   if ($form->{projectnumber}) {
-    ($null, $project_id) = split /--/, $form->{projectnumber};
+    (undef, $project_id) = split /--/, $form->{projectnumber};
     $project = qq|
                  AND ac.project_id = $project_id
 		 |;
@@ -186,11 +157,11 @@ sub all_transactions {
                 l.description AS translation
                 FROM chart c
 		LEFT JOIN translation l ON (l.trans_id = c.id AND l.language_code = '$myconfig->{countrycode}')
-		WHERE c.accno = |.$dbh->quote($form->{accno}).qq||;
+		WHERE c.accno = '$form->{accno}'|;
     if ($form->{accounttype} eq 'gifi') {
       $query = qq|SELECT description, category, link, contra
                 FROM chart
-		WHERE gifi_accno = |.$dbh->quote($form->{gifi_accno}).qq|
+		WHERE gifi_accno = '$form->{gifi_accno}'
 		AND charttype = 'A'|;
     }
 
@@ -214,13 +185,11 @@ sub all_transactions {
 			FROM acc_trans ac
 			JOIN $_ a ON (a.id = ac.trans_id)
 			JOIN chart c ON (ac.chart_id = c.id)
-			WHERE c.gifi_accno = |.$dbh->quote($form->{gifi_accno}).qq|
+			WHERE c.gifi_accno = '$form->{gifi_accno}'
 			AND ac.approved = '1'
 			AND ac.transdate < '$form->{fromdate}'
-			AND a.department_id = |.$form->dbclean($department_id).qq|
+			AND a.department_id = $department_id
 			$project
-            $fx_transaction
-			$subquery
 			|;
 		      
 	  } else {
@@ -231,13 +200,11 @@ sub all_transactions {
 			FROM acc_trans ac
 			JOIN $_ a ON (a.id = ac.trans_id)
 			JOIN chart c ON (ac.chart_id = c.id)
-			WHERE c.accno = |.$dbh->quote($form->{accno}).qq|
+			WHERE c.accno = '$form->{accno}'
 			AND ac.approved = '1'
 			AND ac.transdate < '$form->{fromdate}'
-			AND a.department_id = |.$form->dbclean($department_id).qq|
+			AND a.department_id = $department_id
 			$project
-            $fx_transaction
-			$subquery
 			|;
 	  }
 
@@ -249,23 +216,19 @@ sub all_transactions {
 	  $query = qq|SELECT SUM(ac.amount)
 		    FROM acc_trans ac
 		    JOIN chart c ON (ac.chart_id = c.id)
-		    WHERE c.gifi_accno = |.$dbh->quote($form->{gifi_accno}).qq|
+		    WHERE c.gifi_accno = '$form->{gifi_accno}'
 		    AND ac.approved = '1'
 		    AND ac.transdate < '$form->{fromdate}'
 		    $project
-            $fx_transaction
-		    $subquery
 		    |;
 	} else {
 	  $query = qq|SELECT SUM(ac.amount)
 		      FROM acc_trans ac
 		      JOIN chart c ON (ac.chart_id = c.id)
-		      WHERE c.accno = |.$dbh->quote($form->{accno}).qq|
+		      WHERE c.accno = '$form->{accno}'
 		      AND ac.approved = '1'
 		      AND ac.transdate < '$form->{fromdate}'
 		      $project
-              $fx_transaction
-		      $subquery
 		      |;
 	}
       }
@@ -274,17 +237,16 @@ sub all_transactions {
       
     }
   }
-  $form->{balance} = 0 if $form->{method} eq 'cash'; # We don't need it when drilling down from income statement
 
   $query = "";
   my $union = "";
 
   foreach my $id (@id) {
-
+    
     # get all transactions
     $query .= qq|$union
-                 SELECT a.id, a.reference, a.description, '' AS name, ac.transdate,
-	         $false AS invoice, a.curr, ac.amount, 'gl' as module, ac.cleared,
+                 SELECT a.id, a.reference, a.description, ac.transdate,
+	         $false AS invoice, ac.amount, 'gl' as module, ac.cleared,
 		 ac.source,
 		 '' AS till, ac.chart_id, '0' AS vc_id
 		 FROM gl a
@@ -296,13 +258,11 @@ sub all_transactions {
 		 $todate_where
 		 $dpt_where
 		 $project
-         $fx_transaction
-		 $subquery
       
              UNION ALL
       
-                 SELECT a.id, a.invnumber, a.description, c.name, ac.transdate,
-	         a.invoice, a.curr, ac.amount, 'ar' as module, ac.cleared,
+                 SELECT a.id, a.invnumber, c.name, ac.transdate,
+	         a.invoice, ac.amount, 'ar' as module, ac.cleared,
 		 ac.source,
 		 a.till, ac.chart_id, c.id AS vc_id
 		 FROM ar a
@@ -315,13 +275,11 @@ sub all_transactions {
 		 $todate_where
 		 $dpt_where
 		 $project
-         $fx_transaction
-		 $subquery
       
              UNION ALL
       
-                 SELECT a.id, a.invnumber, a.description, v.name, ac.transdate,
-	         a.invoice, a.curr, ac.amount, 'ap' as module, ac.cleared,
+                 SELECT a.id, a.invnumber, v.name, ac.transdate,
+	         a.invoice, ac.amount, 'ap' as module, ac.cleared,
 		 ac.source,
 		 a.till, ac.chart_id, v.id AS vc_id
 		 FROM ap a
@@ -334,8 +292,6 @@ sub all_transactions {
 		 $todate_where
 		 $dpt_where
 		 $project
-         $fx_transaction
-		 $subquery
 		 |;
 
     $union = qq|
@@ -343,8 +299,9 @@ sub all_transactions {
                  |;
   }
 
-  $query .= qq|
-      ORDER BY $sortorder|;
+  my @sf = qw(transdate reference description);
+  my %ordinal = $form->ordinal_order($dbh, $query);
+  $query .= qq| ORDER BY | .$form->sort_order(\@sf, \%ordinal);
 
   $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
@@ -356,7 +313,7 @@ sub all_transactions {
 	      AND ac.approved = '1'
 	      AND ac.trans_id = ?|;
   my $dr = $dbh->prepare($query) || $form->dberror($query);
-
+  
   $query = qq|SELECT c.id, c.accno FROM chart c
               JOIN acc_trans ac ON (ac.chart_id = c.id)
               WHERE ac.amount < 0

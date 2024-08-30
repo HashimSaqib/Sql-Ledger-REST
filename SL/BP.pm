@@ -31,7 +31,7 @@ sub get_vc {
 	       sales_quotation => { oe => customer },
 	       request_quotation => { oe => vendor },
 	       timecard => { jcitems => employee },
-	       reminder => { ar => customer },
+	       storescard => { jcitems => employee },
 	     );
   
   my $query;
@@ -39,10 +39,8 @@ sub get_vc {
   my $count;
   my $item;
   my $vc;
-  my $wildcard;
-  
-  $form->{vc} = 'vendor' if $form->{vc} ne 'customer'; # SQLI protection
-  # SQLI protection: $form->{type} needs to be validated
+  my $wildcard = ($form->{type} eq 'invoice') ? '%' : '';
+
   if ($form->{batch} eq 'queue') {
     for (keys %{ $arap{$form->{type}} }) {
       $query = qq|
@@ -146,22 +144,10 @@ sub get_vc {
    
   }
 
-  # get dispatch types
-  $query = qq|SELECT *
-              FROM dispatch
-	      ORDER BY 1|;
-  $sth = $dbh->prepare($query);
-  $sth->execute || $form->dberror($query);
-  
-  while ($ref = $sth->fetchrow_hashref(NAME_lc)) {
-    push @{ $form->{all_dispatch} }, $ref;
-  }
-  $sth->finish;
-
   $form->all_years($myconfig, $dbh);
 
   if ($form->{type} =~ /(timecard|storescard)/) {
-    $form->all_projects($myconfig, $dbh);
+    $form->all_projects($myconfig, $dbh, undef, ($form->{type} eq 'storescard'));
   }
 
   $dbh->disconnect;
@@ -179,6 +165,8 @@ sub get_spoolfiles {
 
   my %defaults = $form->get_defaults($dbh, \@{['precision']});
   for (keys %defaults) { $form->{$_} = $defaults{$_} }
+
+  $form->get_peripherals($dbh);
     
   my $query;
   my $invnumber = "invnumber";
@@ -195,19 +183,17 @@ sub get_spoolfiles {
 	       purchase_order => { oe => vendor },
 	       bin_list => { oe => customer, ar => customer, ap => vendor },
 	       sales_quotation => { oe => customer },
-	       request_quotation => { oe => vendor },
-	       reminder => { ar => customer },
+	       request_quotation => { oe => vendor }
 	     );
- 
-  ($form->{transdatefrom}, $form->{transdateto}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
+
+  unless ($form->{transdatefrom} || $form->{transdateto}) {
+    ($form->{transdatefrom}, $form->{transdateto}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
+  }
 
   my $where;
 
-  if ($form->{type} eq 'timecard') {
-    my $dateformat = $myconfig->{dateformat};
-
-    $dateformat =~ s/yy/yyyy/;
-    $dateformat =~ s/yyyyyy/yyyy/;
+  if ($form->{type} =~ /(timecard|storescard)/) {
+    my $dateformat = 'YYYY-MM-DD';
     
     $invnumber = 'id';
     $where = "1=1";
@@ -218,13 +204,15 @@ sub get_spoolfiles {
                   j.id AS invnumber,
 		  to_char(j.checkedin, '$dateformat') AS transdate,
 		  '' AS ordnumber, '' AS quonumber, '0' AS invoice,
-		  'jc' AS module, s.spoolfile, j.description,
-		  j.sellprice * j.qty AS amount, e.city, e.id AS employee_id
+		  'jcitems' AS tablename, s.spoolfile, j.description,
+		  j.sellprice * j.qty AS amount, ad.city, e.id AS employee_id
 		  FROM jcitems j
 		  JOIN employee e ON (e.id = j.employee_id)
+		  JOIN address ad ON (ad.trans_id = e.id)
 		  JOIN status s ON (s.trans_id = j.id)
 		  WHERE s.formname = '$form->{type}'
-		  AND s.spoolfile IS NOT NULL|;
+		  AND s.spoolfile IS NOT NULL
+                  AND s.spoolfile <> ''|;
 		  
     } else {
       
@@ -254,10 +242,11 @@ sub get_spoolfiles {
                   j.id AS invnumber,
 		  to_char(j.checkedin, '$dateformat') AS transdate,
 		  '' AS ordnumber, '' AS quonumber, '0' AS invoice,
-		  'jc' AS module, '' AS spoolfile, j.description, 
-		  j.sellprice * j.qty AS amount, e.city, e.id AS employee_id
+		  'jcitems' AS tablename, '' AS spoolfile, j.description, 
+		  j.sellprice * j.qty AS amount, ad.city, e.id AS employee_id
 		  FROM jcitems j
 		  JOIN employee e ON (e.id = j.employee_id)
+		  JOIN address ad ON (ad.trans_id = e.id)
 		  WHERE $where|;
     }
 
@@ -290,7 +279,7 @@ sub get_spoolfiles {
 
     foreach $item (keys %{ $arap{$form->{type}} }) {
 
-      $where = "1=1";
+      $where = "1 = 1";
       
       $invoice = "a.invoice";
       $invnumber = "invnumber";
@@ -306,15 +295,10 @@ sub get_spoolfiles {
 	$form->{"$arap{$form->{type}}{$item}_id"} = 0;
       }
 
-      if ($form->{dispatch}){
-         my ($null, $dispatch_id) = split /--/, $form->{dispatch};
-         $dispatch_id *= 1;
-         $where .= qq| AND vc.dispatch_id = $dispatch_id|;
-      }
-
       if ($form->{type} eq 'remittance_voucher') {
 	$where .= qq| AND vc.remittancevoucher = '1'|;
-
+      }
+      if ($form->{type} eq 'remittance_voucher' || $form->{type} eq 'invoice') {
 	if ($form->{paymentmethod}) {
 	  ($var, $paymentmethod_id) = split /--/, $form->{paymentmethod};
 	  $where .= qq| AND a.paymentmethod_id = $paymentmethod_id|;
@@ -328,16 +312,16 @@ sub get_spoolfiles {
 		  vc.$arap{$form->{type}}{$item}number AS vcnumber,
 		  a.$invnumber AS invnumber, a.transdate,
 		  a.ordnumber, a.quonumber, $invoice AS invoice,
-		  '$item' AS module, s.spoolfile, a.description, a.amount,
-		  ad.city, vc.email, vc.cc, '$arap{$form->{type}}{$item}' AS db,
+		  '$item' AS tablename, s.spoolfile, a.description, a.amount,
+		  ad.city, vc.email, '$arap{$form->{type}}{$item}' AS db,
 		  vc.id AS vc_id
 		  FROM $item a
 		  JOIN $arap{$form->{type}}{$item} vc ON (a.$arap{$form->{type}}{$item}_id = vc.id)
 		  JOIN address ad ON (ad.trans_id = vc.id)
 		  JOIN status s ON (s.trans_id = a.id)
 		  WHERE s.spoolfile IS NOT NULL
-		  AND s.formname LIKE '$wildcard$form->{type}'
-          AND $where|;
+                  AND s.spoolfile <> ''
+		  AND s.formname LIKE '$wildcard$form->{type}'|;
       } else {
 	
 	if ($item ne 'oe' && $form->{onhold}) {
@@ -369,26 +353,25 @@ sub get_spoolfiles {
 	      if ($form->{$_}) {
 		if (!$form->{"not$_"}) {
 		  $where .= qq| AND a.id IN (SELECT s.trans_id
-					      FROM status s
-					      WHERE s.trans_id = a.id
-					      AND s.$_ = '1'
-					      AND s.formname LIKE '$wildcard$form->{type}')|;
+					     FROM status s
+					     WHERE s.trans_id = a.id
+					     AND s.$_ = '1'
+					     AND s.formname LIKE '$wildcard$form->{type}')|;
 		}
 	      }
 	      if ($form->{"not$_"}) {
 		if (!$form->{$_}) {
 		  $where .= qq| AND NOT a.id IN (SELECT s.trans_id
-					      FROM status s
-					      WHERE s.trans_id = a.id
-					      AND s.$_ = '1'
-					      AND s.formname LIKE '$wildcard$form->{type}')|;
+					     FROM status s
+					     WHERE s.trans_id = a.id
+					     AND s.$_ = '1'
+					     AND s.formname LIKE '$wildcard$form->{type}')|;
 		}
 	      }
 	    }
-	    } else {
-	      $where .= qq| AND a.id = 0|;
+          } else {
+            $where .= qq| AND a.id = 0|;
 	  }
-
 	}
 
 	$query .= qq|
@@ -397,7 +380,7 @@ sub get_spoolfiles {
 		  vc.$arap{$form->{type}}{$item}number AS vcnumber,
 		  a.$invnumber AS invnumber, a.transdate,
 		  a.ordnumber, a.quonumber, $invoice AS invoice,
-		  '$item' AS module, '' AS spoolfile, a.description, a.amount,
+		  '$item' AS tablename, '' AS spoolfile, a.description, a.amount,
 		  '$arap{$form->{type}}{$item}' AS vc,
 		  ad.city, vc.email, '$arap{$form->{type}}{$item}' AS db,
                   vc.id AS vc_id
@@ -408,10 +391,9 @@ sub get_spoolfiles {
       }
 
       if ($form->{$arap{$form->{type}}{$item}}) {
-	if ($form->{"$arap{$form->{type}}{$item}_id"}) {
+	if ($form->{"$arap{$form->{type}}{$item}_id"} ne "") {
 	  $query .= qq| AND a.$arap{$form->{type}}{$item}_id = $form->{"$arap{$form->{type}}{$item}_id"}|;
 	} else {
-      $form->{$arap{$form->{type}}{$item}} =~ s/^\s+|\s+$//g; # remove leading/trailing white space
 	  $var = $form->like(lc $form->{$arap{$form->{type}}{$item}});
 	  $query .= " AND lower(vc.name) LIKE '$var'";
 	}
@@ -448,19 +430,9 @@ sub get_spoolfiles {
     }
   }
 
-  my %ordinal = ( name => 2,
-                  vcnumber => 3,
-                  invnumber => 4,
-                  transdate => 5,
-		  ordnumber => 6,
-		  quonumber => 7,
-		  description => 11
-		);
-
-  my @a = ();
-  push @a, ("transdate", "$invnumber", "name");
-  my $sortorder = $form->sort_order(\@a, \%ordinal);
-  $query .= " ORDER by $sortorder";
+  my @sf = ("transdate", "$invnumber", "name");
+  my %ordinal = $form->ordinal_order($dbh, $query);
+  $query .= qq| ORDER BY | .$form->sort_order(\@sf, \%ordinal);
 
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
@@ -468,42 +440,42 @@ sub get_spoolfiles {
   while (my $ref = $sth->fetchrow_hashref(NAME_lc)) {
     push @{ $form->{SPOOL} }, $ref;
   }
-  
   $sth->finish;
+
+  # include spoolfiles only
+  if ($form->{batch} eq 'queue') {
+    $query = qq|SELECT s.*, s.trans_id AS id
+                FROM status s
+                WHERE s.formname = '$form->{type}'
+                AND s.spoolfile IS NOT NULL
+                AND s.spoolfile <> ''|;
+
+     if ($form->{type} =~ /(timecard|storescard)/) {
+       $query .= qq|AND s.trans_id NOT IN (SELECT id FROM jcitems)|;
+
+     } else {
+       $query .= qq|
+                AND s.trans_id NOT IN (SELECT id
+                                       FROM ar
+                                       UNION
+                                       SELECT id
+                                       FROM ap
+                                       UNION
+                                       SELECT id
+                                       FROM oe
+                                       )|;
+     }
+     $sth = $dbh->prepare($query);
+
+     $sth->execute || $form->dberror($query);
+     while (my $ref = $sth->fetchrow_hashref(NAME_lc)) {
+       push @{ $form->{SPOOL} }, $ref;
+     }
+     $sth->finish;
+  }
+
   $dbh->disconnect;
 
-}
-
-
-sub zip_spool {
-  my ($self, $myconfig, $form, $spool) = @_;
-
-  my $fileid = time;
-  my $tmpfile = "$form->{login}.$fileid.zip";
-
-  foreach my $i (1 .. $form->{rowcount}) {
-      $_ = qq|$spool/$form->{"spoolfile_$i"}|;
-      if ($form->{"ndx_$i"}) {
-	system("zip -q -u $spool/$tmpfile $_");
-	#system("tar -cvf $spool/$tmpfile $_");
-      }
-  }
-  
-  open(IN, "$spool/$tmpfile");
-  binmode(IN);
-
-  print qq|Content-Type: application/zip
-Content-Disposition: attachment; filename="$tmpfile"\n\n|;
-
-  open(OUT, ">-");
-
-  while (<IN>) {
-     print OUT $_;
-  }
-
-  close(IN);
-  close(OUT);
-  unlink $spool/$tmpfile;
 }
 
 
@@ -537,7 +509,7 @@ sub delete_spool {
       $sth->execute($form->{"spoolfile_$i"}) || $form->dberror;
       $sth->finish;
       
-      %audittrail = ( tablename  => $form->{module},
+      %audittrail = ( tablename  => $form->{"tablename_$i"},
                       reference  => $form->{"reference_$i"},
 		      formname   => $formname,
 		      action     => 'dequeued',
@@ -553,7 +525,7 @@ sub delete_spool {
 
   if ($rc) {
     foreach my $i (1 .. $form->{rowcount}) {
-      $_ = qq|$spool/$form->{"spoolfile_$i"}|;
+      $_ = qq|$spool/$myconfig->{dbname}/$form->{"spoolfile_$i"}|;
       if ($form->{"ndx_$i"}) {
 	unlink;
       }
@@ -589,7 +561,7 @@ sub print_spool {
   open(OUT, $form->{OUT}) or $form->error("$form->{OUT} : $!");
   binmode(OUT);
   
-  $spoolfile = qq|$spool/$form->{spoolfile}|;
+  $spoolfile = qq|$spool/$myconfig->{dbname}/$form->{spoolfile}|;
   
   # send file to printer
   open(IN, $spoolfile) or $form->error("$spoolfile : $!");
@@ -608,7 +580,7 @@ sub print_spool {
   $sth->execute($form->{spoolfile}) || $form->dberror;
   $sth->finish;
   
-  %audittrail = ( tablename  => $form->{module},
+  %audittrail = ( tablename  => $form->{tablename},
 		  reference  => $form->{reference},
 		  formname   => $formname,
 		  action     => 'printed',
@@ -621,6 +593,31 @@ sub print_spool {
   $dbh->disconnect;
 
   $rc;
+
+}
+
+
+sub spoolfile {
+  my ($self, $myconfig, $form) = @_;
+
+  # connect to database
+  my $dbh = $form->dbconnect($myconfig);
+
+  my $filename = time;
+  $filename .= int rand 10000;
+  $filename .= ".$form->{format}";
+
+  my $query = qq|SELECT nextval('id')|;
+  my ($id) = $dbh->selectrow_array($query);
+
+  $query = qq|INSERT INTO status (trans_id, printed, emailed,
+              spoolfile, formname) VALUES ($id, '0', '0',
+	      '$filename', '$form->{type}')|;
+  $dbh->do($query) || $form->dberror($query);
+
+  $dbh->disconnect;
+
+  $filename;
 
 }
 

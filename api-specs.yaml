@@ -8,7 +8,7 @@ servers:
     description: Testing Server
     variables:
       client:
-        default: ledger28
+        default: neoledger
         description: Client parameter for testing
 tags:
   - name: General Ledger

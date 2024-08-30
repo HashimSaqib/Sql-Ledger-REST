@@ -22,8 +22,10 @@ sub create_links {
   # employees
   $form->all_employees($myconfig, $dbh, undef, 0);
 
+  $form->all_years($myconfig, $dbh);
+
   $form->remove_locks($myconfig, $dbh, 'br');
-  
+
   $dbh->disconnect;
   
 }
@@ -37,7 +39,7 @@ sub edit_batch {
   
   my $query = qq|SELECT a.batchnumber, a.description, a.transdate
 	         FROM br a
-		 WHERE a.id = |.$form->dbclean($form->{batchid}).qq||;
+		 WHERE a.id = $form->{batchid}|;
   ($form->{batchnumber}, $form->{batchdescription}, $form->{transdate}) = $dbh->selectrow_array($query);
 
   $dbh->disconnect;
@@ -57,8 +59,8 @@ sub save_batch {
   my $query = qq|UPDATE br SET
                  batchnumber = |.$dbh->quote($form->{batchnumber}).qq|,
  		 description = |.$dbh->quote($form->{batchdescription}).qq|,
-		 transdate = |.$dbh->quote($transdate).qq|
-		 WHERE id = |.$form->dbclean($form->{batchid}).qq||;
+		 transdate = '$transdate'
+		 WHERE id = $form->{batchid}|;
   $dbh->do($query) || $form->dberror($query);
 
   my $rc = $dbh->commit;
@@ -74,48 +76,28 @@ sub list_batches {
 
   # connect to database
   my $dbh = $form->dbconnect($myconfig);
-  my $null;
   my $var;
 
   my %defaults = $form->get_defaults($dbh, \@{['precision', 'company']});
   for (keys %defaults) { $form->{$_} = $defaults{$_} }
   
-  ($form->{transdatefrom}, $form->{transdateto}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
+  unless ($form->{transdatefrom} || $form->{transdateto}) {
+    ($form->{transdatefrom}, $form->{transdateto}) = $form->from_to($form->{year}, $form->{month}, $form->{interval}) if $form->{year} && $form->{month};
+  }
  
   my $query = qq|SELECT a.id, a.batch, a.batchnumber, a.description,
                  a.transdate, a.apprdate, a.amount,
-		 e.name AS employee, m.name AS manager
+		 e.name AS employee
 	         FROM br a
 	      LEFT JOIN employee e ON (a.employee_id = e.id)
-	      LEFT JOIN employee m ON (a.managerid = m.id)
 	      |;
 
-  my %ordinal = ( id => 1,
-                  batchnumber => 2,
-		  description => 3,
-		  transdate => 4,
-		  apprdate => 5,
-		  employee => 7,
-		  manager => 8
-		);
-
-  
-  my @a = (batchnumber, transdate, apprdate);
-  push @a, "employee" if $form->{l_employee};
-  push @a, "manager" if $form->{l_manager};
-  my $sortorder = $form->sort_order(\@a, \%ordinal);
-
   my $where = "1 = 1";
-  $where .= " AND a.batch = |.$dbh->quote($form->{batch}).qq|" if $form->{batch};
+  $where .= " AND a.batch = '$form->{batch}'" if $form->{batch};
 
-  if ($myconfig->{role} eq 'user') {
-    ($null, $var) = $form->get_employee($dbh);
+  if ($form->{employee}) {
+    (undef, $var) = split /--/, $form->{employee};
     $where .= " AND a.employee_id = $var";
-  } else {
-    if ($form->{employee}) {
-      ($null, $var) = split /--/, $form->{employee};
-      $where .= " AND a.employee_id = $var";
-    }
   }
 
   if ($form->{batchnumber}) {
@@ -127,16 +109,19 @@ sub list_batches {
     $where .= " AND lower(a.description) LIKE '$var'";
   }
 
-  $where .= " AND a.transdate >= ".$dbh->quote($form->{transdatefrom})."" if $form->{transdatefrom};
-  $where .= " AND a.transdate <= ".$dbh->quote($form->{transdateto})."" if $form->{transdateto};
+  $where .= " AND a.transdate >= '$form->{transdatefrom}'" if $form->{transdatefrom};
+  $where .= " AND a.transdate <= '$form->{transdateto}'" if $form->{transdateto};
   
   if (! $form->{l_apprdate}) {
     $where .= " AND a.apprdate IS NULL";
   }
 
-  $query .= "
-             WHERE $where
-             ORDER by $sortorder";
+  $query .= " WHERE $where";
+
+  my @sf = (batchnumber, transdate, apprdate);
+  push @sf, "employee" if $form->{l_employee};
+  my %ordinal = $form->ordinal_order($dbh, $query);
+  $query .= qq| ORDER BY | .$form->sort_order(\@sf, \%ordinal);
 
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
@@ -146,6 +131,7 @@ sub list_batches {
   }
   
   $sth->finish;
+
   $dbh->disconnect;
 
 }
@@ -167,23 +153,23 @@ sub post_transaction {
     my $uid = localtime;
     $uid .= $$;
     $query = qq|INSERT INTO br (batchnumber, batch, employee_id)
-                VALUES (|.$dbh->quote($uid).qq|, '|.$form->dbclean($form->{batch}).qq|',
+                VALUES ('$uid', '$form->{batch}',
 		    (SELECT id FROM employee
-		     WHERE login = |.$dbh->quote($form->{login}).qq|))|;
+		     WHERE login = '$form->{login}'))|;
     $dbh->do($query) || $form->dberror($query);
 
     $query = qq|SELECT id FROM br
-                WHERE batchnumber = |.$dbh->quote($uid).qq||;
+                WHERE batchnumber = '$uid'|;
     ($form->{batchid}) = $dbh->selectrow_array($query);
     
     $query = qq|UPDATE br SET
                 batchnumber = |.$dbh->quote($form->{batchnumber}).qq|,
 		description = |.$dbh->quote($form->{batchdescription}).qq|,
-		transdate = |.$dbh->quote($form->{transdate}).qq|
-		WHERE id = |.$form->dbclean($form->{batchid}).qq||;
+		transdate = '$form->{transdate}'
+		WHERE id = $form->{batchid}|;
     $dbh->do($query) || $form->dberror($query);
 
-    if (!($rc = $dbh->commit)) {
+    if(!($rc = $dbh->commit)) {
       $dbh->disconnect;
       return;
     }
@@ -213,26 +199,19 @@ sub list_vouchers {
   # connect to database
   my $dbh = $form->dbconnect($myconfig);
 
+  my %defaults = $form->get_defaults($dbh, \@{['precision']});
+  $form->{precision} = $defaults{precision};
+
   my $ml = 1;
   
   my $query = qq|SELECT batchnumber, description, transdate, apprdate, batch
                  FROM br
-		 WHERE id = |.$form->dbclean($form->{batchid}).qq||;
+		 WHERE id = $form->{batchid}|;
   ($form->{batchnumber}, $form->{batchdescription}, $form->{transdate}, $form->{apprdate}, $form->{batch}) = $dbh->selectrow_array($query);
 
   $form->remove_locks($myconfig, $dbh, 'br');
   $form->create_lock($myconfig, $dbh, $form->{batchid}, 'br');
   
-  my %ordinal = ( id => 1,
-                  invnumber => 2,
-		  name => 3,
-		  vendornumber => 4,
-		  vouchernumber => 6
-		);
-
-  my @a = (vouchernumber);
-  my $sortorder = $form->sort_order(\@a, \%ordinal);
-
   if ($form->{batch} eq 'ap') {
     
     $query = qq|SELECT a.id, a.invnumber, v.name, v.vendornumber,
@@ -240,8 +219,7 @@ sub list_vouchers {
                 FROM vr
 		JOIN ap a ON (a.id = vr.trans_id)
 		JOIN vendor v ON (v.id = a.vendor_id)
-		WHERE vr.br_id = |.$form->dbclean($form->{batchid}).qq|
-                ORDER by $sortorder|;
+		WHERE vr.br_id = $form->{batchid}|;
 
   } elsif ($form->{batch} eq 'payment') {
 
@@ -256,11 +234,10 @@ sub list_vouchers {
 		JOIN chart c ON (c.id = ac.chart_id)
 		JOIN $table a ON (a.id = ac.trans_id)
 		JOIN $form->{vc} v ON (v.id = a.$form->{vc}_id)
-		WHERE vr.br_id = |.$form->dbclean($form->{batchid}).qq|
+		WHERE vr.br_id = $form->{batchid}
 		AND c.link LIKE '%AP_paid%'
 		GROUP BY vr.id, v.name, v.$form->{vc}number, vr.vouchernumber,
-		a.$form->{vc}_id
-                ORDER by $sortorder|;
+		a.$form->{vc}_id|;
 		
   } elsif ($form->{batch} eq 'payment_reversal') {
 
@@ -277,11 +254,10 @@ sub list_vouchers {
 		JOIN chart c ON (c.id = ac.chart_id)
 		JOIN $table a ON (a.id = ac.trans_id)
 		JOIN $form->{vc} v ON (v.id = a.$form->{vc}_id)
-		WHERE vr.br_id = |.$form->dbclean($form->{batchid}).qq|
+		WHERE vr.br_id = $form->{batchid}
 		AND c.link LIKE '%AP_paid%'
 		GROUP BY vr.id, v.name, v.$form->{vc}number, vr.vouchernumber,
-		a.$form->{vc}_id, ac.source
-                ORDER by $sortorder|;
+		a.$form->{vc}_id, ac.source|;
 
   } elsif ($form->{batch} eq 'gl') {
     
@@ -290,13 +266,16 @@ sub list_vouchers {
                 FROM acc_trans ac
 		JOIN gl g ON (g.id = ac.trans_id)
 		JOIN vr ON (vr.trans_id = g.id)
-		WHERE vr.br_id = |.$form->dbclean($form->{batchid}).qq|
+		WHERE vr.br_id = $form->{batchid}
 		AND ac.amount >= 0
 		GROUP BY g.id, g.reference, g.description, vr.id,
-		vr.vouchernumber
-                ORDER by $sortorder|;
+		vr.vouchernumber|;
 		 
   }
+
+  my @sf = (vouchernumber);
+  my %ordinal = $form->ordinal_order($dbh, $query);
+  $query .= qq| ORDER BY | .$form->sort_order(\@sf, \%ordinal);
 
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
@@ -304,8 +283,8 @@ sub list_vouchers {
   while (my $ref = $sth->fetchrow_hashref(NAME_lc)) {
     push @{ $form->{transactions} }, $ref;
   }
-  
   $sth->finish;
+
   $dbh->disconnect;
 
 }
@@ -366,9 +345,9 @@ sub delete_payment_reversal {
   # connect to database
   my $dbh = $form->dbconnect_noauto($myconfig);
   my $query;
- 
-  $form->{id} *= 1;
 
+  $form->{id} *= 1;
+  
   $query = qq|SELECT ac.trans_id, ac.amount * -1
               FROM acc_trans ac
 	      JOIN vr ON (vr.id = ac.vr_id)
@@ -389,10 +368,10 @@ sub delete_payment_reversal {
   $form->update_balance($dbh,
 			'br',
 			'amount',
-			qq|id = |.$form->dbclean($form->{batchid}).qq||,
+			qq|id = $form->{batchid}|,
 			$amount * -1);
 
-  if ($trans_id*=1) {
+  if ($trans_id) {
     $form->update_balance($dbh,
 			  'ap',
 			  'paid',
@@ -423,10 +402,10 @@ sub delete_batch {
   my $dbh = $form->dbconnect_noauto($myconfig);
   
   $form->{batchid} *= 1;
-
+  
   my $query = qq|SELECT vr.id, vr.trans_id
                  FROM vr
-	         WHERE vr.br_id = |.$form->dbclean($form->{batchid}).qq||;
+	         WHERE vr.br_id = $form->{batchid}|;
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
 
@@ -449,8 +428,7 @@ sub delete_batch {
 		AND ac.approved = '0'
 		AND (c.link LIKE '%AP_paid%'
 		     OR c.link LIKE '%AP_discount%')
-		AND NOT (ac.chart_id = $defaults{fxgain_accno_id}
-		      OR ac.chart_id = $defaults{fxloss_accno_id})
+		AND NOT ac.chart_id = $defaults{fxgainloss_accno_id}
 		|;
     $pth = $dbh->prepare($query) || $form->dberror($query);
     
@@ -507,7 +485,7 @@ sub delete_batch {
   $sth->finish;
  
   $query = qq|DELETE FROM br
-	      WHERE id = |.$form->dbclean($form->{batchid}).qq||;
+	      WHERE id = $form->{batchid}|;
   $dbh->do($query) || $form->dberror($query);
   
   $form->remove_locks($myconfig, $dbh, 'br');
@@ -532,7 +510,7 @@ sub post_batch {
   }
 
   $form->{batchid} *= 1;
-
+  
   my $query = qq|SELECT trans_id, id
                  FROM vr
 	         WHERE br_id = $form->{batchid}|;
@@ -603,7 +581,9 @@ sub post_batch {
   
   my $rc = $dbh->commit;
     
-  $dbh->disconnect if $disconnect;
+  if ($disconnect) {
+    $dbh->disconnect;
+  }
 
   $rc;
 
@@ -622,7 +602,8 @@ sub payment_reversal {
                  FROM chart c
 		 LEFT JOIN translation l ON (l.trans_id = c.id AND l.language_code = '$myconfig->{countrycode}')
 		 WHERE c.link LIKE '%AP_paid%'
-		 ORDER BY accno|;
+                 AND c.closed = '0'
+		 ORDER BY c.accno|;
   my $sth = $dbh->prepare($query);
   $sth->execute || $form->dberror($query);
 
@@ -701,7 +682,7 @@ sub post_payment_reversal {
   $accno =~ s/--.*//g;
   
   my $query = qq|SELECT id FROM chart
-                 WHERE accno = |.$dbh->quote($accno).qq||;
+                 WHERE accno = '$accno'|;
   my ($chart_id) = $dbh->selectrow_array($query);
   
   $query = qq|SELECT trans_id, chart_id, amount, fx_transaction
@@ -719,26 +700,26 @@ sub post_payment_reversal {
     my $uid = localtime;
     $uid .= $$;
     $query = qq|INSERT INTO br (batchnumber, batch, employee_id)
-                VALUES (|.$dbh->quote($uid).qq|, |.$dbh->quote($form->{batch}).qq|,
+                VALUES ('$uid', '$form->{batch}',
 		    (SELECT id FROM employee
-		     WHERE login = |.$dbh->quote($form->{login}).qq|))|;
+		     WHERE login = '$form->{login}'))|;
     $dbh->do($query) || $form->dberror($query);
 
     $query = qq|SELECT id FROM br
-                WHERE batchnumber = |.$dbh->quote($uid).qq||;
+                WHERE batchnumber = '$uid'|;
     ($form->{batchid}) = $dbh->selectrow_array($query);
     
     $query = qq|UPDATE br SET
                 batchnumber = |.$dbh->quote($form->{batchnumber}).qq|,
 		description = |.$dbh->quote($form->{batchdescription}).qq|,
-		transdate = |.$dbh->quote($form->{transdate}).qq|
-		WHERE id = |.$form->dbclean($form->{batchid}).qq||;
+		transdate = '$form->{transdate}'
+		WHERE id = $form->{batchid}|;
     $dbh->do($query) || $form->dberror($query);
   } 
   
   $query = qq|INSERT INTO acc_trans (trans_id, chart_id, amount, transdate,
               source, memo, approved, vr_id, fx_transaction)
-              VALUES (?, ?, ?, |.$dbh->quote($form->{transdate}).qq|,|
+              VALUES (?, ?, ?, '$form->{transdate}',|
 	      .$dbh->quote($form->{source}).qq|,|
 	      .$dbh->quote($form->{memo}).qq|, '0', $form->{id}, ?)|;
   my $pth = $dbh->prepare($query) || $form->dberror($query);
@@ -759,7 +740,7 @@ sub post_payment_reversal {
   
   # voucher
   $query = qq|INSERT INTO vr (id, br_id, trans_id, vouchernumber) VALUES (
-              $form->{id}, |.$form->dbclean($form->{batchid}).qq|, ?, |.$dbh->quote($form->{vouchernumber}).qq|)|;
+              $form->{id}, $form->{batchid}, ?, '$form->{vouchernumber}')|;
   my $vth = $dbh->prepare($query) || $form->dberror($query);
 
  
@@ -767,10 +748,10 @@ sub post_payment_reversal {
     
     # get AP account
     $ath->execute($ref->{trans_id});
-    my ($ap_id) = $ath->fetchrow_array;
+    my ($apid) = $ath->fetchrow_array;
     $ath->finish;
     
-    if ($ap_id) {
+    if ($apid) {
     
       # create voucher
       $vth->execute($ref->{trans_id});
@@ -781,7 +762,7 @@ sub post_payment_reversal {
       $pth->finish;
       
       # post offsetting AP
-      $pth->execute($ref->{trans_id}, $ap_id, $ref->{amount}, $ref->{fx_transaction});
+      $pth->execute($ref->{trans_id}, $apid, $ref->{amount}, $ref->{fx_transaction});
       $pth->finish;
 
       # update balance for batch

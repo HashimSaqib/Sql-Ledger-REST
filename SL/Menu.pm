@@ -18,14 +18,17 @@ use SL::Inifile;
 
 
 sub menuitem {
-  my ($self, $myconfig, $form, $item, $level, $i) = @_;
+  my ($self, $myconfig, $form, $item) = @_;
 
   my $module = ($self->{$item}{module}) ? $self->{$item}{module} : $form->{script};
   my $action = ($self->{$item}{action}) ? $self->{$item}{action} : "section_menu";
   my $target = ($self->{$item}{target}) ? $self->{$item}{target} : "";
 
   my $level = $form->escape($item);
-  my $str = qq|<a id="menu$i" href=$module?path=$form->{path}&action=$action&level=$level&login=$form->{login}&js=$form->{js}|;
+  my $login = $form->{login};
+  $login =~ s/ /\%20/;
+
+  my $str = qq|<a href=$module?path=$form->{path}&action=$action&level=$level&login=$login&js=$form->{js}|;
 
   my @vars = qw(module action target href);
   
@@ -46,6 +49,7 @@ sub menuitem {
     
     $str .= $form->escape($value);
   }
+
   $str .= qq|#id$form->{tag}| if $target eq 'acc_menu';
   
   if ($target) {
@@ -68,18 +72,35 @@ sub access_control {
     @menu = grep { /^${menulevel}--/; } @{ $self->{ORDER} };
   }
 
-  my @a = split /;/, $myconfig->{acs};
+  my @acs = split /;/, $myconfig->{acs};
   my $excl = ();
+  
+  grep { ($a, $b) = split /--/; s/--$a$//; } @acs;
+  for (@acs) { $excl{$_} = 1 }
+  @acs = ();
 
-  # remove --AR, --AP from array
-  grep { ($a, $b) = split /--/; s/--$a$//; } @a;
+  my @item;
+  my $acs;
+  my $n;
 
-  for (@a) { $excl{$_} = 1 }
-
-  @a = ();
-  for (@menu) { push @a, $_ unless $excl{$_} }
-
-  @a;
+  for (@menu) {
+    $acs = "";
+    $n = 0;
+    for $item (split /--/, $_) {
+      $acs .= $item;
+      if ($excl{$acs}) {
+	$n = 1;
+	last;
+      }
+      $acs .= "--";
+    }
+    next if $n;
+    
+    push @acs, $_;
+    
+  }
+  
+  @acs;
 
 }
 

@@ -4,7 +4,7 @@ A RESTful API for the Sql-Ledger ERP system.
 
 ## Introduction
 
-Sql-Ledger-REST offers a RESTful API integration to the Sql-Ledger ERP system. This API is built upon the [Run my accounts branch of sql ledger](https://github.com/ledger123/runmyaccounts) and is designed to seamlessly integrate and extend the capabilities of Sql-Ledger.
+Sql-Ledger-REST offers a RESTful API integration to the Sql-Ledger ERP system. This API is designed to seamlessly integrate and extend the capabilities of Sql-Ledger as well as to act as the backend for my Vue 3 SQL-Ledger redesign neo-ledger.
 
 ## Installation
 
@@ -22,7 +22,7 @@ We're constantly working to improve Sql-Ledger-REST and welcome contributions. P
 
 ## Acknowledgements
 
-This project is built upon the [Run my accounts branch of sql ledger](https://github.com/ledger123/runmyaccounts).
+This project is built upon the [Open Source SQL-Ledger ERP system](https://github.com/ledger123/runmyaccounts).
 
 ## Contact
 

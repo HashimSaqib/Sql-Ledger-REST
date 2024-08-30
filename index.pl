@@ -26,7 +26,7 @@ my %myconfig = (
     dateformat   => 'yyyy/mm/dd',
     dbdriver     => 'Pg',
     dbhost       => '',
-    dbname       => 'ledger28',
+    dbname       => 'neoledger',
     dbpasswd     => '',
     dbport       => '',
     dbuser       => 'postgres',
@@ -38,7 +38,7 @@ helper slconfig => sub { \%myconfig };
 # Helper method
 helper client_check => sub {
     my ( $c, $client ) = @_;
-    unless ( $client eq 'ledger28' ) {
+    unless ( $client eq 'neoledger' ) {
         $c->render(
             status => 404,
             json   => {
