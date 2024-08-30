@@ -241,7 +241,7 @@ paths:
     post: 
       tags:
       - Auth
-      summary: Create an API login
+      summary: Create an API login. Employee should already exist in database. Uses the username from "employee" table. Can be specified to be an admin.
       parameters:
         - name: employeeid
           in: query
@@ -255,6 +255,12 @@ paths:
           description: The password for the API login. This password will be stored in the `apilogin` table of the specified client's database.
           schema:
             type: string
+        - name: admin
+          in: query
+          required: false
+          description: If the user should have admin access. Admin access will give complete API access without any access control. 
+          schema:
+            type: boolean
       responses:
         "200":
           description: Successful creation of API login
