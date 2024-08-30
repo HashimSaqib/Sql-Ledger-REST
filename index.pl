@@ -188,7 +188,6 @@ $api->post('/:client/auth/login' => sub {
     # If the database connection failed, it would have already returned an error response
     return unless $dbs;
 
-   
     # Check for the username in the employee table
     my $employee = $dbs->query('SELECT id FROM employee WHERE login = ?', $username)->hash;
     unless ($employee) {
@@ -200,22 +199,17 @@ $api->post('/:client/auth/login' => sub {
 
     my $employee_id = $employee->{id};
 
-    # Check if the API account exists in the apilogin table
-    my $login = $dbs->query('SELECT password FROM apilogin WHERE employeeid = ?', $employee_id)->hash;
+    # Check if the API account exists in the apilogin table and verify the password
+    my $login = $dbs->query('
+        SELECT password
+        FROM apilogin
+        WHERE employeeid = ? AND crypt(?, password) = password
+    ', $employee_id, $password)->hash;
 
-    # Check if the record exists
     unless ($login) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "API account does not exist" } }
-        );
-    }
-
-    # Check for the correct password
-    unless ($login->{password} eq $password) {
-        return $c->render(
-            status => 400,
-            json   => { error => { message => "Incorrect password" } }
+            json   => { error => { message => "Incorrect username or password" } }
         );
     }
 
@@ -258,9 +252,14 @@ $api->post('/:client/auth/create_api_login' => sub {
         );
     }
 
-    # Step 3: Insert the password into the apilogin table, with error handling
+    # Step 3: Use PostgreSQL to hash the password with bcrypt
+    my $hashed_password;
     eval {
-        $dbs->query('INSERT INTO apilogin (employeeid, password) VALUES (?, ?)', $employeeid, $password);
+        my $sth = $dbs->prepare('
+            INSERT INTO apilogin (employeeid, password)
+            VALUES (?, crypt(?, gen_salt(\'bf\')))
+        ');
+        $sth->execute($employeeid, $password);
     };
     if ($@) {
         return $c->render(
