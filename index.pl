@@ -22,6 +22,20 @@ use SL::CA;
 use SL::GL;
 use DateTime::Format::ISO8601;
 
+# Override render_exception to return JSON
+app->hook(around_dispatch => sub {
+    my ($next, $c) = @_;
+    
+    eval { $next->(); 1 } or do {
+        my $error = $@ || 'Unknown error';
+        $c->render(
+            status => 500,
+            json   => { error => { message => "$error" } }
+        );
+    };
+});
+
+
 my %myconfig = (
     dateformat   => 'yyyy/mm/dd',
     dbdriver     => 'Pg',
@@ -54,17 +68,28 @@ helper client_check => sub {
 
 helper dbs => sub {
     my ( $c, $dbname ) = @_;
-    my $dbs;
-    if ($dbname) {
-        my $dbh = DBI->connect( "dbi:Pg:dbname=$dbname", 'postgres', '' )
-          or die $DBI::errstr;
-        $dbs = DBIx::Simple->connect($dbh);
-        return $dbs;
+
+    my $dbh;
+    eval {
+        $dbh = DBI->connect("dbi:Pg:dbname=$dbname", 'postgres', '', { RaiseError => 1, PrintError => 0 });
+    };
+
+    if ($@ || !$dbh) {
+        my $error_message = $DBI::errstr // $@ // "Unknown error";
+
+        # Ensure no further processing or responses are sent after this
+        $c->render(
+            status => 500,
+            json   => { error => { message => "Failed to connect to the database '$dbname': $error_message" } }
+        );
+        $c->app->log->error("Failed to connect to the database '$dbname': $error_message");
+        return undef; # Return undef to prevent further processing
     }
-    else {
-        return $dbs;
-    }
+
+    my $dbs = DBIx::Simple->connect($dbh);
+    return $dbs;
 };
+
 
 helper validate_date => sub {
     my ( $c, $date ) = @_;
@@ -88,6 +113,167 @@ my $r = app->routes;
 
 my $api = $r->under('/api/client');
 
+#########################
+#### AUTH   +        #### 
+#### ACCESS CONTROL  #### 
+####                 ####
+#########################
+
+my $allMenuItems = qq'AR--AR;AR--Add Transaction;AR--Sales Invoice;AR--Credit Note;AR--Credit Invoice;AR--Reports;POS--POS;POS--Sale;POS--Open;POS--Receipts;Customers--Customers;Customers--Add Customer;Customers--Reports;AP--AP;AP--Add Transaction;AP--Vendor Invoice;AP--Debit Note;AP--Debit Invoice;AP--Reports;Vendors--Vendors;Vendors--Add Vendor;Vendors--Reports;Cash--Cash;Cash--Receipt;Cash--Receipts;Cash--Payment;Cash--Payments;Cash--Void Check;Cash--Reissue Check;Cash--Void Receipt;Cash--Reissue Receipt;Cash--FX Adjustment;Cash--Reconciliation;Cash--Reports;Vouchers--Vouchers;Vouchers--Payable;Vouchers--Payment;Vouchers--Payments;Vouchers--Payment Reversal;Vouchers--General Ledger;Vouchers--Reports;HR--HR;HR--Employees;HR--Payroll;Order Entry--Order Entry;Order Entry--Sales Order;Order Entry--Purchase Order;Order Entry--Reports;Order Entry--Generate;Order Entry--Consolidate;Logistics--Logistics;Logistics--Merchandise;Logistics--Reports;Quotations--Quotations;Quotations--Quotation;Quotations--RFQ;Quotations--Reports;General Ledger--General Ledger;General Ledger--Add Transaction;General Ledger--Reports;Goods & Services--Goods & Services;Goods & Services--Add Part;Goods & Services--Add Service;Goods & Services--Add Kit;Goods & Services--Add Assembly;Goods & Services--Add Labor/Overhead;Goods & Services--Add Group;Goods & Services--Add Pricegroup;Goods & Services--Stock Assembly;Goods & Services--Stock Adjustment;Goods & Services--Reports;Goods & Services--Changeup;Goods & Services--Translations;Projects & Jobs--Projects & Jobs;Projects & Jobs--Projects;Projects & Jobs--Jobs;Projects & Jobs--Translations;Reference Documents--Reference Documents;Reference Documents--Add Document;Reference Documents--List Documents;Image Files--Image Files;Image Files--Add File;Image Files--List Files;Reports--Reports;Reports--Chart of Accounts;Reports--Trial Balance;Reports--Income Statement;Reports--Balance Sheet;Recurring Transactions--Recurring Transactions;Batch--Batch;Batch--Print;Batch--Email;Batch--Queue;Exchange Rates--Exchange Rates;Import--Import;Import--Customers;Import--Vendors;Import--Parts;Import--Services;Import--Labor/Overhead;Import--Sales Invoices;Import--Groups;Import--Payments;Import--Sales Orders;Import--Purchase Orders;Import--Chart of Accounts;Import--General Ledger;Export--Export;Export--Payments;System--System;System--Defaults;System--Audit Control;System--Audit Log;System--Bank Accounts;System--Taxes;System--Currencies;System--Payment Methods;System--Workstations;System--Roles;System--Warehouses;System--Departments;System--Type of Business;System--Language;System--Mimetypes;System--SIC;System--Yearend;System--Maintenance;System--Backup;System--Chart of Accounts;System--html Templates;System--XML Templates;System--LaTeX Templates;System--Text Templates;Stylesheet--Stylesheet;Preferences--Preferences;New Window--New Window;Version--Version;Logout--Logout';
+my $neoLedgerMenu = qq'General Ledger--Reports;';
+
+helper check_perms => sub {
+    my ($c, $sessionkey, $permission) = @_;
+
+    # Step 1: Validate the session key
+    my $session = $c->db->query('SELECT employeeid FROM apisessions WHERE sessionkey = ?', $sessionkey)->hash;
+
+    unless ($session) {
+        return $c->render(
+            status => 403,
+            json   => { error => { message => "Invalid session key" } }
+        );
+    }
+
+    my $employee_id = $session->{employeeid};
+
+    # Step 2: Check if the user is an admin
+    my $is_admin = $c->db->query('SELECT admin FROM apilogin WHERE employeeid = ?', $employee_id)->hash->{admin};
+
+    return 1 if $is_admin;
+
+    # Step 3: Get the acsrole_id from the employee table
+    my $acsrole_id = $c->db->query('SELECT acsrole_id FROM employee WHERE id = ?', $employee_id)->hash->{acsrole_id};
+
+    # Step 4: Get the restricted permissions string from the acsrole table
+    my $acs_string = $c->db->query('SELECT acs FROM acsrole WHERE id = ?', $acsrole_id)->hash->{acs};
+
+    # Step 5: Check if the permission string is in the restricted list
+    my @restricted_perms = split(';', $acs_string);
+    foreach my $restricted_perm (@restricted_perms) {
+        if ($permission eq $restricted_perm) {
+            return $c->render(
+                status => 403,
+                json   => { error => { message => "Permission '$permission' is not allowed" } }
+            );
+        }
+    }
+
+    # If the permission is not in the restricted list, return true
+    return 1;
+};
+
+$api->post('/:client/auth/login' => sub {
+    my $c = shift;
+    my $params = $c->req->params->to_hash;
+    my $client = $c->param('client');
+    
+    my $username_with_db = $params->{username};
+    my $password = $params->{password};
+
+    # Split the username based on "@"
+    my ($username, $dbname) = split('@', $username_with_db);
+
+    # Check if dbname is provided
+    unless ($dbname) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Database name is required in the username" } }
+        );
+    }
+
+    # Establish a database connection using the dbname
+    my $dbs = $c->dbs($dbname);
+    
+    # If the database connection failed, it would have already returned an error response
+    return unless $dbs;
+
+   
+    # Check for the username in the employee table
+    my $employee = $dbs->query('SELECT id FROM employee WHERE login = ?', $username)->hash;
+    unless ($employee) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Employee record does not exist" } }
+        );
+    }
+
+    my $employee_id = $employee->{id};
+
+    # Check if the API account exists in the apilogin table
+    my $login = $dbs->query('SELECT password FROM apilogin WHERE employeeid = ?', $employee_id)->hash;
+
+    # Check if the record exists
+    unless ($login) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "API account does not exist" } }
+        );
+    }
+
+    # Check for the correct password
+    unless ($login->{password} eq $password) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Incorrect password" } }
+        );
+    }
+
+    # Generate a session key (for now, just use a hardcoded string)
+    my $session_key = 'hardcoded_session_key';
+
+    # Store the session key in the apisessions table
+    $dbs->query('INSERT INTO apisession (employeeid, sessionkey) VALUES (?, ?)', $employee_id, $session_key);
+
+    # Return the session key
+    return $c->render(
+        json => { sessionkey => $session_key }
+    );
+});
+
+$api->post('/:client/auth/create_api_login' => sub {
+    my $c = shift;
+    my $client = $c->param('client');
+    my $params = $c->req->params->to_hash;
+    my $employeeid = $params->{employeeid};
+    my $password = $params->{password};
+
+    # Step 1: Check for missing parameters
+    unless ($employeeid && $password) {
+        return $c->render(
+            status => 400,
+            json   => { error => { message => "Missing required parameters 'employeeid' or 'password'" } }
+        );
+    }
+
+    # Step 2: Try to connect to the existing database using the client name
+    my $dbs;
+    eval {
+        $dbs = $c->dbs($client);
+    };
+    if ($@) {
+        return $c->render(
+            status => 500,
+            json   => { error => { message => "Failed to connect to the client database '$client': $@" } }
+        );
+    }
+
+    # Step 3: Insert the password into the apilogin table, with error handling
+    eval {
+        $dbs->query('INSERT INTO apilogin (employeeid, password) VALUES (?, ?)', $employeeid, $password);
+    };
+    if ($@) {
+        return $c->render(
+            status => 500,
+            json   => { error => { message => "Failed to create API login: $@" } }
+        );
+    }
+
+    # Step 4: Return success message
+    return $c->render(
+        json => { message => "API login created successfully for user '$employeeid'" }
+    );
+});
 
 
 #########################

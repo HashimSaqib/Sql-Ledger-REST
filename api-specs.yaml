@@ -11,6 +11,8 @@ servers:
         default: neoledger
         description: Client parameter for testing
 tags:
+  - name: Auth
+    description: Endpoints related to API Authentication
   - name: General Ledger
     description: Endpoints related to General Ledger
   - name: Charts Of Accounts
@@ -183,6 +185,118 @@ components:
           description: Indicates if the chart record allows general ledger entries
 
 paths:
+  "/auth/login":
+    post:
+      tags:
+        - Auth
+      summary: Login to a database to get a sessionkey. Sessionkey should be passed in the header in all other routes.
+      parameters:
+        - name: username
+          in: query
+          required: true
+          description: Username for the user. Should be in the format user@dbname (Just like normal SQL-Ledger login). User should exist as an employee in SQL-Ledger as well as an API User.
+          schema:
+            type: string
+        - name: password
+          in: query
+          required: true
+          description: API Password for the user. This is different from the normal SQL-Ledger password which is stored in the users file. This is stored in the database in the apilogin table. See Database Updates for API for more.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionkey:
+                    type: string
+                    description: The session key to be used for authenticated requests.
+                  menustring:
+                    type: string
+                    description: The string representing the user's menu or permissions.
+        "401":
+          description: Unsuccessful authentication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid username or password."
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing username or password."
+  "/auth/create_api_login":
+    post: 
+      tags:
+      - Auth
+      summary: Create an API login
+      parameters:
+        - name: employeeid
+          in: query
+          required: true
+          description: The ID of the employee for whom the API login is being created. This employee must exist in the SQL-Ledger database.
+          schema:
+           type: string
+        - name: password
+          in: query
+          required: true
+          description: The password for the API login. This password will be stored in the `apilogin` table of the specified client's database.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful creation of API login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Confirmation that the API login was created successfully.
+                    example: "API login created successfully for user 'employeeid'."
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    description: Details about the error that occurred.
+                    properties:
+                      message:
+                        type: string
+                        example: "Missing required parameters 'employeeid' or 'password'."
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    description: Details about the error that occurred during the database connection or query execution.
+                    properties:
+                      message:
+                        type: string
+                        example: "Failed to connect to the client database 'client'." 
+       
+
   "/gl/transactions/lines":
     get:
       tags:
