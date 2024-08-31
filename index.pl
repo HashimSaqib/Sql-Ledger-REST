@@ -22,18 +22,6 @@ use SL::CA;
 use SL::GL;
 use DateTime::Format::ISO8601;
 
-# Override render_exception to return JSON
-app->hook(around_dispatch => sub {
-    my ($next, $c) = @_;
-    
-    eval { $next->(); 1 } or do {
-        my $error = $@ || 'Unknown error';
-        $c->render(
-            status => 500,
-            json   => { error => { message => "$error" } }
-        );
-    };
-});
 
 
 my %myconfig = (
@@ -112,6 +100,33 @@ helper validate_date => sub {
 my $r = app->routes;
 
 my $api = $r->under('/api/client');
+# Enable CORS for all routes
+app->hook(before_dispatch => sub {
+    my $c = shift;
+    $c->res->headers->header('Access-Control-Allow-Origin' => '*');
+    $c->res->headers->header('Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS');
+    $c->res->headers->header('Access-Control-Allow-Headers' => 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    $c->res->headers->header('Access-Control-Max-Age' => '3600');
+    $c->res->headers->header('Access-Control-Allow-Credentials' => 'true');
+    return unless $c->req->method eq 'OPTIONS';
+    $c->render(text => '', status => 204);
+    return 1;
+});
+
+# Override render_exception to return JSON and include CORS headers
+app->hook(around_dispatch => sub {
+    my ($next, $c) = @_;
+    eval { $next->(); 1 } or do {
+        my $error = $@ || 'Unknown error';
+        $c->res->headers->header('Access-Control-Allow-Origin' => '*');
+        $c->res->headers->header('Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS');
+        $c->res->headers->header('Access-Control-Allow-Headers' => 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+        $c->render(
+            status => 500,
+            json => { error => { message => "$error" } }
+        );
+    };
+});
 
 #########################
 #### AUTH   +        #### 
@@ -131,7 +146,7 @@ helper check_perms => sub {
     unless ($session) {
         return $c->render(
             status => 403,
-            json   => { error => { message => "Invalid session key" } }
+            json   => { message => "Invalid session key" } 
         );
     }
 
@@ -154,7 +169,7 @@ helper check_perms => sub {
         if ($permission eq $restricted_perm) {
             return $c->render(
                 status => 403,
-                json   => { error => { message => "Permission '$permission' is not allowed" } }
+                json   => { message => "Permission '$permission' is not allowed" } 
             );
         }
     }
@@ -165,7 +180,7 @@ helper check_perms => sub {
 
 $api->post('/:client/auth/login' => sub {
     my $c = shift;
-    my $params = $c->req->params->to_hash;
+    my $params = $c->req->json;
     my $client = $c->param('client');
     
     my $username_with_db = $params->{username};
@@ -178,7 +193,7 @@ $api->post('/:client/auth/login' => sub {
     unless ($dbname) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Database name is required in the username" } }
+            json   => { message => "Database name is required in the username" } 
         );
     }
 
@@ -193,7 +208,7 @@ $api->post('/:client/auth/login' => sub {
     unless ($employee) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Employee record does not exist" } }
+            json   => { message => "Employee record does not exist" } 
         );
     }
 
@@ -209,7 +224,7 @@ $api->post('/:client/auth/login' => sub {
     unless ($login) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Incorrect username or password" } }
+            json   => { message => "Incorrect username or password" } 
         );
     }
 
@@ -236,7 +251,7 @@ $api->post('/:client/auth/create_api_login' => sub {
     unless ($employeeid && $password) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Missing required parameters 'employeeid' or 'password'" } }
+            json   => { message => "Missing required parameters 'employeeid' or 'password'" } 
         );
     }
 
@@ -248,7 +263,7 @@ $api->post('/:client/auth/create_api_login' => sub {
     if ($@) {
         return $c->render(
             status => 500,
-            json   => { error => { message => "Failed to connect to the client database '$client': $@" } }
+            json   => { message => "Failed to connect to the client database '$client': $@" } 
         );
     }
 
@@ -302,9 +317,7 @@ $api->get('/:client/gl/transactions/lines' => sub {
     {
         return $c->render(
             status => 404,
-            json   => { error => 
-            { message => "No transactions found" },
-            }
+            json   => { message => "No transactions found" },
         );
     }
 
@@ -450,9 +463,7 @@ $api->get(
             return $c->render(
                 status => 404,
                 json   => {
-                    error => {
                         message => "The requested GL transaction was not found."
-                    }
                 }
             );
         }
@@ -574,11 +585,7 @@ sub api_gl_transaction () {
     unless ( exists $data->{transdate} ) {
         return $c->render(
             status => 400,
-            json   => {
-                error => {
-                    message => "The 'transdate' field is required.",
-                },
-            },
+            json   => { message => "The 'transdate' field is required.", }
         );
     }
 
@@ -588,12 +595,8 @@ sub api_gl_transaction () {
     unless ( $transdate =~ /^\d{4}-\d{2}-\d{2}$/ ) {
         return $c->render(
             status => 400,
-            json   => {
-                error => {
-                    message =>
-"Invalid 'transdate' format. Expected ISO 8601 date format (YYYY-MM-DD).",
-                },
-            },
+            json   => { message => "Invalid 'transdate' format. Expected ISO 8601 date format (YYYY-MM-DD)." }
+
         );
     }
 
@@ -601,11 +604,7 @@ sub api_gl_transaction () {
     unless ( exists $data->{lines} && ref $data->{lines} eq 'ARRAY' ) {
         return $c->render(
             status => 400,
-            json   => {
-                Error => {
-                    message => "The 'lines' array is required.",
-                },
-            },
+            json   => {  message => "The 'lines' array is required."  },
         );
     }
 
@@ -623,11 +622,7 @@ sub api_gl_transaction () {
     unless ( $result->rows ) {
         return $c->render(
             status => 400,
-            json   => {
-                Error => {
-                    message => "The specified currency does not exist.",
-                },
-            },
+            json   => { message => "The specified currency does not exist." },
         );
     }
 
@@ -638,12 +633,7 @@ sub api_gl_transaction () {
     {
         return $c->render(
             status => 400,
-            json   => {
-                Error => {
-                    message =>
-"A non-default currency has been used. Exchange rate is required.",
-                },
-            },
+            json   => { message => "A non-default currency has been used. Exchange rate is required."},
         );
     }
 
@@ -708,11 +698,9 @@ sub api_gl_transaction () {
             return $c->render(
                 status => 400,
                 json   => {
-                    Error => {
                             message => "Account with the accno "
                           . $line->{accno}
                           . " does not exist.",
-                    },
                 },
             );
         }
@@ -849,9 +837,7 @@ $api->delete(
             return $c->render(
                 status => 404,
                 json   => {
-                    Error => {
                         message => "Transaction with ID $id not found."
-                    }
                 }
             );
         }
@@ -912,7 +898,7 @@ $api->get('/:client/charts' => sub {
     } else {
         return $c->render(
             status => 404,
-            json   => { error => { message => "No accounts found" } }
+            json   => { message => "No accounts found" } 
         );
     }
 });
@@ -953,7 +939,7 @@ $api->post('/:client/charts' => sub {
     unless ($accno && $description) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Missing required fields: accno, description" } }
+            json   =>  { message => "Missing required fields: accno, description" } 
         );
     }
 
@@ -961,7 +947,7 @@ $api->post('/:client/charts' => sub {
     unless ($charttype eq 'A' || $charttype eq 'H') {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Invalid charttype. Must be either 'A' or 'H'" } }
+            json   => { message => "Invalid charttype. Must be either 'A' or 'H'" } 
         );
     }
 
@@ -970,7 +956,7 @@ $api->post('/:client/charts' => sub {
     unless ($category && length($category) == 1 && grep { $_ eq $category } @valid_categories) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Invalid category. Must be one of 'A', 'L', 'I', 'Q', 'E'" } }
+            json   =>  { message => "Invalid category. Must be one of 'A', 'L', 'I', 'Q', 'E'" } 
         );
     }
 
@@ -992,7 +978,7 @@ $api->post('/:client/charts' => sub {
     } else {
         return $c->render(
             status => 500,
-            json   => { error => { message => "Failed to create chart entry" } }
+            json   => { message => "Failed to create chart entry" } 
         );
     }
 });

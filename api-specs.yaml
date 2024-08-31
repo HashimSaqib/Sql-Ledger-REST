@@ -190,19 +190,22 @@ paths:
       tags:
         - Auth
       summary: Login to a database to get a sessionkey. Sessionkey should be passed in the header in all other routes.
-      parameters:
-        - name: username
-          in: query
-          required: true
-          description: Username for the user. Should be in the format user@dbname (Just like normal SQL-Ledger login). User should exist as an employee in SQL-Ledger as well as an API User.
-          schema:
-            type: string
-        - name: password
-          in: query
-          required: true
-          description: API Password for the user. This is different from the normal SQL-Ledger password which is stored in the users file. This is stored in the database in the apilogin table. See Database Updates for API for more.
-          schema:
-            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Username for the user. Should be in the format user@dbname (Just like normal SQL-Ledger login). User should exist as an employee in SQL-Ledger as well as an API User.
+                password:
+                  type: string
+                  description: API Password for the user. This is different from the normal SQL-Ledger password which is stored in the users file. This is stored in the database in the apilogin table. See Database Updates for API for more.
+              required:
+                - username
+                - password
       responses:
         "200":
           description: Successful login
@@ -280,13 +283,9 @@ paths:
               schema:
                 type: object
                 properties:
-                  error:
-                    type: object
-                    description: Details about the error that occurred.
-                    properties:
-                      message:
-                        type: string
-                        example: "Missing required parameters 'employeeid' or 'password'."
+                  message:
+                    type: string
+                    example: "Missing required parameters 'employeeid' or 'password'."
         "500":
           description: Internal Server Error
           content:
@@ -294,13 +293,9 @@ paths:
               schema:
                 type: object
                 properties:
-                  error:
-                    type: object
-                    description: Details about the error that occurred during the database connection or query execution.
-                    properties:
-                      message:
-                        type: string
-                        example: "Failed to connect to the client database 'client'." 
+                  message:
+                    type: string
+                    example: "Failed to connect to the client database 'client'." 
        
 
   "/gl/transactions/lines":
