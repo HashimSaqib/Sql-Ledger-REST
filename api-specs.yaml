@@ -185,6 +185,50 @@ components:
           description: Indicates if the chart record allows general ledger entries
 
 paths:
+  "/auth/validate":
+    post:
+      tags:
+        - Auth
+      summary: Validate a session key to ensure the user is authorized.
+      parameters:
+        - in: query
+          name: sessionkey
+          required: true
+          schema:
+            type: string
+          description: The session key to be validated.
+      responses:
+        "200":
+          description: Session key is valid.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized - Invalid session key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Not Authorized: Invalid session key"
+        "400":
+          description: Bad Request - Missing session key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Missing session key."
+
   "/auth/login":
     post:
       tags:

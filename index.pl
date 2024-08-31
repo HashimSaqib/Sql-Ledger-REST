@@ -44,9 +44,7 @@ helper client_check => sub {
         $c->render(
             status => 404,
             json   => {
-                Error => {
                     message => "Client not found.",
-                },
             },
         );
         return 0;
@@ -68,7 +66,7 @@ helper dbs => sub {
         # Ensure no further processing or responses are sent after this
         $c->render(
             status => 500,
-            json   => { error => { message => "Failed to connect to the database '$dbname': $error_message" } }
+            json   => { message => "Failed to connect to the database '$dbname': $error_message" } 
         );
         $c->app->log->error("Failed to connect to the database '$dbname': $error_message");
         return undef; # Return undef to prevent further processing
@@ -85,10 +83,8 @@ helper validate_date => sub {
         return $c->render(
             status => 400,
             json   => {
-                Error => {
                     message =>
 "Invalid date format. Expected ISO 8601 date format (YYYY-MM-DD).",
-                },
             },
         );
     }
@@ -123,7 +119,7 @@ app->hook(around_dispatch => sub {
         $c->res->headers->header('Access-Control-Allow-Headers' => 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
         $c->render(
             status => 500,
-            json => { error => { message => "$error" } }
+            json => { message => "$error" } 
         );
     };
 });
@@ -178,6 +174,27 @@ helper check_perms => sub {
     return 1;
 };
 
+$api->post('/:client/auth/validate' => sub { 
+    my $c = shift;
+    my $client = $c->param('client');
+    my $sessionkey = $c->req->params->to_hash->{sessionkey};
+    my $dbs = $c->dbs($client);
+
+    # Query the database to validate the sessionkey
+    my $result = $dbs->query("SELECT * FROM apisession WHERE sessionkey = ?", $sessionkey)->hash;
+    $c->log->warn($result);
+    if ($result) {  
+        # Session key is valid, return true
+        $c->render(json => { success => 1 });
+    } else {
+        # Session key is not valid, return a 401 Not Authorized code with an error message
+        $c->render(
+            status => 401,
+            json   => { message => "Not Authorized: Invalid session key" }
+        );
+    }
+});
+
 $api->post('/:client/auth/login' => sub {
     my $c = shift;
     my $params = $c->req->json;
@@ -228,12 +245,7 @@ $api->post('/:client/auth/login' => sub {
         );
     }
 
-    # Generate a session key (for now, just use a hardcoded string)
-    my $session_key = 'hardcoded_session_key';
-
-    # Store the session key in the apisessions table
-    $dbs->query('INSERT INTO apisession (employeeid, sessionkey) VALUES (?, ?)', $employee_id, $session_key);
-
+    my $session_key = $dbs->query('INSERT INTO apisession (employeeid, sessionkey) VALUES (?, encode(gen_random_bytes(32), ?)) RETURNING sessionkey', $employee_id, 'hex')->hash->{sessionkey};    
     # Return the session key
     return $c->render(
         json => { sessionkey => $session_key }
@@ -270,16 +282,16 @@ $api->post('/:client/auth/create_api_login' => sub {
     # Step 3: Use PostgreSQL to hash the password with bcrypt
     my $hashed_password;
     eval {
-        my $sth = $dbs->prepare('
+        my $query = '
             INSERT INTO apilogin (employeeid, password)
             VALUES (?, crypt(?, gen_salt(\'bf\')))
-        ');
-        $sth->execute($employeeid, $password);
+        ';
+        $dbs->query($query, $employeeid, $password);
     };
     if ($@) {
         return $c->render(
             status => 500,
-            json   => { error => { message => "Failed to create API login: $@" } }
+            json   => { message => "Failed to create API login: $@" } 
         );
     }
 
@@ -566,10 +578,8 @@ $api->put(
             unless ($existing_entry) {
                 return $c->render(
                     status => 404,
-                    json   => {
-                        error => {
+                    json   =>  {
                             message => "Transaction with ID $id not found."
-                        }
                     }
                 );
             }
@@ -722,11 +732,9 @@ sub api_gl_transaction () {
     unless ( $total_debit == $total_credit ) {
         return $c->render(
             status => 400,
-            json   => {
-                Error => {
+            json   =>  {
                     message =>
 "Total Debits ($total_debit) must equal Total Credits ($total_credit).",
-                },
             },
         );
     }
@@ -921,7 +929,7 @@ $api->post('/:client/charts' => sub {
     unless ($data) {
         return $c->render(
             status => 400,
-            json   => { error => { message => "Invalid JSON in request body" } }
+            json   => { message => "Invalid JSON in request body" } 
         );
     }
 
