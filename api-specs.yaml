@@ -264,6 +264,9 @@ paths:
                   menustring:
                     type: string
                     description: The string representing the user's menu or permissions.
+                  client: 
+                    type: string
+                    description: The client/dbName for this user
         "401":
           description: Unsuccessful authentication
           content:

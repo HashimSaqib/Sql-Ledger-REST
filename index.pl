@@ -248,7 +248,7 @@ $api->post('/:client/auth/login' => sub {
     my $session_key = $dbs->query('INSERT INTO apisession (employeeid, sessionkey) VALUES (?, encode(gen_random_bytes(32), ?)) RETURNING sessionkey', $employee_id, 'hex')->hash->{sessionkey};    
     # Return the session key
     return $c->render(
-        json => { sessionkey => $session_key }
+        json => { sessionkey => $session_key, client => $dbname }
     );
 });
 
