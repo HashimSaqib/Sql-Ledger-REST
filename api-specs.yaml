@@ -170,6 +170,9 @@ components:
             - Q # Capital/Equity
             - E # Expense
           description: Category of the chart, such as Asset (A), Liability (L), Sale/Income (I), Capital/Equity (Q), or Expense (E)
+        label:
+          type: string
+          description: Label for acc. "Accno --- AccDescription"
         link:
           type: string
           description: Link or reference associated with the chart record

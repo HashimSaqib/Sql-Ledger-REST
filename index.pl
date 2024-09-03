@@ -897,6 +897,11 @@ $api->get('/:client/charts' => sub {
 
     # Execute the query with the necessary parameters
     my $entries = $dbs->query($sql, map { "%$_%" } @links)->hashes;
+    
+    # Add the "label" property to each entry
+    foreach my $entry (@$entries) {
+        $entry->{label} = $entry->{accno} . '---' . $entry->{description};
+    }
 
     if ($entries) {
         return $c->render(
