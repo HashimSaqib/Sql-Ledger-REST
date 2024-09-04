@@ -96,7 +96,7 @@ helper validate_date => sub {
 
 my $r = app->routes;
 
-my $api = $r->under('/api/client');
+my $api = $r->under('/api/client/:client');
 # Enable CORS for all routes
 app->hook(before_dispatch => sub {
     my $c = shift;
@@ -175,7 +175,7 @@ helper check_perms => sub {
     return 1;
 };
 
-$api->post('/:client/auth/validate' => sub { 
+$api->post('/auth/validate' => sub { 
     my $c = shift;
     my $client = $c->param('client');
     my $sessionkey = $c->req->params->to_hash->{sessionkey};
@@ -196,7 +196,7 @@ $api->post('/:client/auth/validate' => sub {
     }
 });
 
-$api->post('/:client/auth/login' => sub {
+$api->post('/auth/login' => sub {
     my $c = shift;
     my $params = $c->req->json;
     my $client = $c->param('client');
@@ -253,7 +253,7 @@ $api->post('/:client/auth/login' => sub {
     );
 });
 
-$api->post('/:client/auth/create_api_login' => sub {
+$api->post('/auth/create_api_login' => sub {
     my $c = shift;
     my $client = $c->param('client');
     my $params = $c->req->params->to_hash;
@@ -310,7 +310,7 @@ $api->post('/:client/auth/create_api_login' => sub {
 #########################
 
 
-$api->get('/:client/gl/transactions/lines' => sub {
+$api->get('/gl/transactions/lines' => sub {
     my $c      = shift;
     my $params = $c->req->params->to_hash;
     my $client = $c->param('client');
@@ -345,7 +345,7 @@ $api->get('/:client/gl/transactions/lines' => sub {
 });
 
 $api->get(
-    '/:client/gl/transactions' => sub {
+    '/gl/transactions' => sub {
         my $c      = shift;
         my $client = $c->param('client');
         return unless $c->client_check($client);
@@ -457,7 +457,7 @@ $api->get(
 
 #Get An Individual GL transaction
 $api->get(
-    '/:client/gl/transactions/:id' => sub {
+    '/gl/transactions/:id' => sub {
         my $c      = shift;
         my $id     = $c->param('id');
         my $client = $c->param('client');
@@ -544,7 +544,7 @@ $api->get(
 );
 
 $api->post(
-    '/:client/gl/transactions' => sub {
+    '/gl/transactions' => sub {
         my $c = shift;
         $c->app->log->error("Check");
         my $client = $c->param('client');
@@ -560,7 +560,7 @@ $api->post(
 );
 
 $api->put(
-    '/:client/gl/transactions/:id' => sub {
+    '/gl/transactions/:id' => sub {
         my $c      = shift;
         my $client = $c->param('client');
         my $id;
