@@ -17,6 +17,8 @@ tags:
     description: Endpoints related to General Ledger
   - name: Charts Of Accounts
     description: Endpoints related to the Chart Of Accounts
+  - name: System Settings 
+    description: Endpoints related to System Settings 
 components:
   schemas:
     GLTransaction:
@@ -186,6 +188,15 @@ components:
           type: string
           maxLength: 1
           description: Indicates if the chart record allows general ledger entries
+    Currency: 
+      type: object
+      properties:
+        rn:
+          type: number
+        curr:
+          type: string
+        prec: 
+          type: number
 
 paths:
   "/auth/validate":
@@ -861,3 +872,151 @@ paths:
               example:
                 error:
                   message: "Failed to create chart entry"
+    
+  "/system/currencies/":
+    get:
+      tags:
+        - Currencies
+      summary: Retrieve all available currencies
+      parameters:
+        - name: client
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The client identifier to connect to the appropriate database
+      responses:
+        "200":
+          description: List of available currencies retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currencies:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rn:
+                          type: integer
+                          description: Running number of the currency
+                        curr:
+                          type: string
+                          description: The currency code (3 characters)
+                        prec:
+                          type: integer
+                          description: The number of decimal places for the currency
+                example:
+                  currencies:
+                    - rn: 1
+                      curr: "USD"
+                      prec: 2
+                    - rn: 2
+                      curr: "EUR"
+                      prec: 2
+        "404":
+          description: No currencies found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that no currencies were found
+              example:
+                message: "No currencies found"
+        "500":
+          description: Failed to retrieve currencies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that the server encountered an error
+              example:
+                message: "Failed to retrieve currencies"
+
+    post:
+      tags:
+        - Currencies
+      summary: Create a new currency entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - curr
+                - prec
+              properties:
+                curr:
+                  type: string
+                  description: The 3-character currency code (e.g., "USD", "EUR")
+                  maxLength: 3
+                  minLength: 3
+                  example: "USD"
+                prec:
+                  type: integer
+                  description: The number of decimal places for the currency
+                  minimum: 0
+                  maximum: 10
+                  example: 2
+      responses:
+        "201":
+          description: Currency created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A success message
+                  currency:
+                    type: object
+                    properties:
+                      rn:
+                        type: integer
+                        description: Running number of the currency
+                      curr:
+                        type: string
+                        description: The currency code (3 characters)
+                      prec:
+                        type: integer
+                        description: The number of decimal places for the currency
+              example:
+                message: "Currency created successfully"
+                currency:
+                  rn: 3
+                  curr: "GBP"
+                  prec: 2
+        "400":
+          description: Invalid input parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that required fields are missing or invalid
+              example:
+                message: "Invalid input parameters"
+        "500":
+          description: Failed to create currency
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that the server encountered an error while creating the currency
+              example:
+                message: "Failed to create currency"
+
