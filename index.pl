@@ -38,20 +38,6 @@ my %myconfig = (
 
 helper slconfig => sub { \%myconfig };
 
-# Helper method
-helper client_check => sub {
-    my ( $c, $client ) = @_;
-    unless ( $client eq 'neoledger' ) {
-        $c->render(
-            status => 404,
-            json   => {
-                    message => "Client not found.",
-            },
-        );
-        return 0;
-    }
-    return 1;
-};
 
 helper dbs => sub {
     my ( $c, $dbname ) = @_;
@@ -348,7 +334,6 @@ $api->get(
     '/gl/transactions' => sub {
         my $c      = shift;
         my $client = $c->param('client');
-        return unless $c->client_check($client);
 
         # Create the DBIx::Simple handle
         $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -461,7 +446,6 @@ $api->get(
         my $c      = shift;
         my $id     = $c->param('id');
         my $client = $c->param('client');
-        return unless $c->client_check($client);
 
         # Create the DBIx::Simple handle
         $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -548,7 +532,6 @@ $api->post(
         my $c = shift;
         $c->app->log->error("Check");
         my $client = $c->param('client');
-        return unless $c->client_check($client);
         my $data = $c->req->json;
 
         # Create the DBIx::Simple handle
@@ -565,7 +548,6 @@ $api->put(
         my $client = $c->param('client');
         my $id;
         $id = $c->param('id');
-        return unless $c->client_check($client);
         my $data = $c->req->json;
 
         # Create the DBIx::Simple handle
@@ -825,12 +807,11 @@ sub api_gl_transaction () {
 }
 
 $api->delete(
-    '/:client/gl/transactions/:id' => sub {
+    '/gl/transactions/:id' => sub {
         my $c      = shift;
         my $client = $c->param('client');
         my $id     = $c->param('id');
 
-        return unless $c->client_check($client);
 
         # Create the DBIx::Simple handle
         $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -868,11 +849,10 @@ $api->delete(
 ####                 ####
 #########################
 
-$api->get('/:client/charts' => sub {
+$api->get('/charts' => sub {
     my $c      = shift;
     my $client = $c->param('client');
 
-    return unless $c->client_check($client);
 
     # Create the DBIx::Simple handle
     $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -916,11 +896,10 @@ $api->get('/:client/charts' => sub {
 
 
 
-$api->post('/:client/charts' => sub {
+$api->post('/charts' => sub {
     my $c      = shift;
     my $client = $c->param('client');
 
-    return unless $c->client_check($client);
 
     # Create the DBIx::Simple handle
     $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -1000,7 +979,7 @@ $api->post('/:client/charts' => sub {
 ####                       ####
 ###############################
 
-$api->get(':client/system/currencies' => sub {
+$api->get('/system/currencies' => sub {
     my $c = shift;
     my $client = $c->param('client');
 
@@ -1020,5 +999,65 @@ $api->get(':client/system/currencies' => sub {
 
     $c->render(json =>  $currencies );
 });
+
+# POST route to create a new currency
+$api->any([qw(POST PUT)] => '/system/currencies' => sub {
+    my $c = shift;
+    my $client = $c->param('client');
+
+    # Get JSON body params
+    my $params = $c->req->json;
+    my $curr   = $params->{curr}   || '';
+    my $prec   = $params->{prec}   || '';
+
+    # Validate input parameters
+    unless ($curr =~ /^[A-Z]{3}$/ && $prec =~ /^\d+$/ && $prec >= 0 && $prec <= 10) {
+        return $c->render(
+            status => 400, 
+            json   => { message => 'Invalid input parameters' }
+        );
+    }
+
+    my $dbs = $c->dbs($client);
+
+    my  $form = new Form;
+    $form->{curr} = $curr;
+    $form->{prec} = $prec;
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+    AM->save_currency($c->slconfig, $form);
+
+    return $c->render(
+        status => 201, 
+        json   => { message => 'Currency created successfully' }
+    );
+});
+
+$api->delete('/system/currencies/:curr' => sub {
+    my $c = shift;
+    my $client = $c->param('client');
+    my $curr   = $c->param('curr');
+
+    # Validate input parameter
+    unless ($curr =~ /^[A-Z]{3}$/) {
+        return $c->render(
+            status => 400, 
+            json   => { message => 'Invalid currency code' }
+        );
+    }
+
+    my $dbs = $c->dbs($client);
+
+    # Create a form object with the currency code
+    my $form = new Form;
+    $form->{curr} = $curr;
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+    # Call the delete method from AM module
+    AM->delete_currency($c->slconfig, $form);
+
+    # Return no content (204)
+    return $c->rendered(204);
+});
+
 
 app->start;

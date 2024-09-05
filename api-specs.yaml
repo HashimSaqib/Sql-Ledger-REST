@@ -878,13 +878,6 @@ paths:
       tags:
         - Currencies
       summary: Retrieve all available currencies
-      parameters:
-        - name: client
-          in: path
-          required: true
-          schema:
-            type: string
-          description: The client identifier to connect to the appropriate database
       responses:
         "200":
           description: List of available currencies retrieved successfully
@@ -1019,4 +1012,60 @@ paths:
                     description: A message indicating that the server encountered an error while creating the currency
               example:
                 message: "Failed to create currency"
+
+  "/system/currencies/{curr}":
+    delete:
+      tags:
+        - Currencies
+      summary: Delete a currency entry
+      parameters:
+        - in: path
+          name: curr
+          required: true
+          schema:
+            type: string
+            description: The 3-character currency code (e.g., "USD", "EUR")
+            maxLength: 3
+            minLength: 3
+          description: The 3-character currency code to delete
+      responses:
+        "204":
+          description: Currency deleted successfully, no content returned
+        "400":
+          description: Invalid currency code provided
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that the provided currency code is invalid
+              example:
+                message: "Invalid currency code"
+        "404":
+          description: Currency not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that the currency was not found
+              example:
+                message: "Currency not found"
+        "500":
+          description: Failed to delete currency
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: A message indicating that the server encountered an error while deleting the currency
+              example:
+                message: "Failed to delete currency"
+
 
