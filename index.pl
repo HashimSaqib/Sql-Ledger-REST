@@ -1069,19 +1069,49 @@ $api->delete('/system/currencies/:curr' => sub {
 $api->get('/customers' => sub { 
     my $c = shift;
     my $client = $c->param('client');
-    my $dbs = $c->dbs($client);
 
-    my $customers = $dbs->query("SELECT * FROM customer")->hashes;
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
 
-    # Add the "label" property to each entry
-    foreach my $customer (@$customers) {
-        $customer->{label} = $customer->{name} . ' -- ' . $customer->{customernumber};
-        my $address = $dbs->query("SELECT * FROM address where trans_id = ?", $customer->{id})->hash;
-        $customer->{address} = $address->{address1} . ' ' . $address->{address2} . ' ' . $address->{city} . ' ' . $address->{state} . ' ' . $address->{zipcode} . ' ' . $address->{pakistan};
-     }
+    my $form = new Form;
 
-    $c->render(json => { customers => $customers });
+    $form->{vc} = 'customer';
+    AA->all_names( $c->slconfig, $form );
+    $c->log->warn(Dumper($form));
+
+    for my $item (@{ $form->{all_vc} }) {
+        $item->{label} = $item->{name} . " -- " . $item->{customernumber};
+    }
+
+    $c->render(json => { customers => $form->{all_vc} });
 });
+
+$api->get('/customers/:id' => sub {
+    my $c = shift;
+    my $client = $c->param('client');
+    $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+    my $form = new Form;
+    $form->{vc} = 'customer';
+    $form->{customer_id} = $c->param('id');
+
+    AA->get_name($c->slconfig, $form);
+
+    # Construct the full address
+    my $full_address = join(' ', 
+                            $form->{address1} // '', 
+                            $form->{address2} // '', 
+                            $form->{city} // '', 
+                            $form->{state} // '', 
+                            $form->{country} // ''
+                           );
+
+    # Add the full address to the form object
+    $form->{full_address} = $full_address;
+
+    # Dereference the form object to render it as JSON
+    $c->render(json => {%$form});
+});
+
 
 ##########################
 ####                  #### 
@@ -1104,11 +1134,12 @@ $api->get('/items' => sub {
 ####                       ####
 ###############################
 
-$api->post('/ar/salesinvoice' => sub { 
+$api->post('/ar/:type"' => sub { 
     my $c = shift;
     my $client = $c->param('client');
     my $data = $c->req->json;
     $c->log->warn(Dumper($data));
+    my $type = $c->param('type');
     my $dbs = $c->dbs($client);
 
     $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
@@ -1157,7 +1188,7 @@ $api->post('/ar/salesinvoice' => sub {
     }
 
 
-    $form->{type} = 'invoice';
+    $form->{type} = $type;
     $form->{taxincluded} = 0;  
     $form->{department_id} = undef;  
     $form->{employee_id} = undef;  
@@ -1209,6 +1240,6 @@ $api->get('/ar/salesinvoice' => sub {
     IS->invoice_details($c->slconfig, $form);
     $c->log->warn(Dumper($form));
 
-    $c->render(json => { Dumper($form)})
+    $c->render(json => { $form });
 });
 app->start;
