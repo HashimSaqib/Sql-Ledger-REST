@@ -1123,10 +1123,20 @@ $api->get('/items' => sub {
     my $c = shift; 
     my $client = $c->param('client');
     my $dbs = $c->dbs($client);
+
+    # Fetch all parts
     my $parts = $dbs->query("SELECT * FROM parts")->hashes;
-    
-    $c->render(json => { parts => $parts});
+
+    # For each part, fetch the related tax accounts from partstax
+    foreach my $part (@$parts) {
+        my $taxaccounts = $dbs->query("SELECT chart_id FROM partstax WHERE parts_id = ?", $part->{id})->arrays;
+        $part->{taxaccounts} = [ map { $_->[0] } @$taxaccounts ];  # Add tax accounts as an array of chart_ids
+    }
+
+    # Render the response as JSON
+    $c->render(json => { parts => $parts });
 });
+
 
 ###############################
 ####                       #### 
