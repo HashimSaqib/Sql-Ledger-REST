@@ -1118,24 +1118,32 @@ $api->get('/customers/:id' => sub {
 #### Goods & Services #### 
 ####                  ####
 ##########################
-
 $api->get('/items' => sub {
     my $c = shift; 
     my $client = $c->param('client');
     my $dbs = $c->dbs($client);
 
-    # Fetch all parts
     my $parts = $dbs->query("SELECT * FROM parts")->hashes;
 
-    # For each part, fetch the related tax accounts from partstax
+    # For each part, fetch the related tax accounts with accno from the chart table
+    # Need this to map with taxes array from customer/vendor
     foreach my $part (@$parts) {
-        my $taxaccounts = $dbs->query("SELECT chart_id FROM partstax WHERE parts_id = ?", $part->{id})->arrays;
-        $part->{taxaccounts} = [ map { $_->[0] } @$taxaccounts ];  # Add tax accounts as an array of chart_ids
+        my $taxaccounts = $dbs->query("
+            SELECT chart.accno 
+            FROM partstax 
+            JOIN chart ON partstax.chart_id = chart.id 
+            WHERE partstax.parts_id = ?", 
+            $part->{id}
+        )->arrays;
+
+        # Add tax accounts as an array of accnos
+        $part->{taxaccounts} = [ map { $_->[0] } @$taxaccounts ];  
     }
 
     # Render the response as JSON
     $c->render(json => { parts => $parts });
 });
+
 
 
 ###############################
@@ -1144,7 +1152,7 @@ $api->get('/items' => sub {
 ####                       ####
 ###############################
 
-$api->post('/ar/:type"' => sub { 
+$api->post('/ar/:type' => sub { 
     my $c = shift;
     my $client = $c->param('client');
     my $data = $c->req->json;
@@ -1156,6 +1164,7 @@ $api->post('/ar/:type"' => sub {
 
     my $form = new Form;
 
+    $form->{type} = $type;
     # Basic invoice details
     $form->{id} = undef;  # This will be assigned by the database
     $form->{invnumber} = $data->{invNumber} || '';
@@ -1188,52 +1197,42 @@ $api->post('/ar/:type"' => sub {
     }
 
     # Payments
-    $form->{paidaccounts} = scalar @{$data->{payments}};
-    for my $i (1 .. $form->{paidaccounts}) {
-        my $payment = $data->{payments}[$i - 1];
+    $form->{paidaccounts} = 0;  # Start with 0 processed payments
+    for my $payment (@{$data->{payments}}) {
+        next unless $payment->{amount} > 0;  
+        $form->{paidaccounts}++;
+        my $i = $form->{paidaccounts};  
         $form->{"datepaid_$i"} = $payment->{date};
         $form->{"source_$i"} = $payment->{source} || '';
-        $form->{"paid_$i"} = $payment->{amount} || 0;
+        $form->{"paid_$i"} = $payment->{amount};
         $form->{"AR_paid_$i"} = $payment->{account};
     }
 
 
-    $form->{type} = $type;
+    # Taxes
+    if ($data->{taxes} && ref($data->{taxes}) eq 'ARRAY') {
+        my @taxaccounts;
+        for my $tax (@{$data->{taxes}}) {
+            push @taxaccounts, $tax->{accno};
+            $form->{"$tax->{accno}_rate"} = $tax->{rate};
+        }
+        $form->{taxaccounts} = join(' ', @taxaccounts);
+        $form->{taxincluded} = $data->{taxincluded};
+    }
+
     $form->{taxincluded} = 0;  
     $form->{department_id} = undef;  
     $form->{employee_id} = undef;  
     $form->{language_code} = 'en';  
     $form->{precision} = $data->{selectedCurrency}->{prec} || 2;
 
-    # manage taxes
-    # $form->{taxaccounts} = '...';
-    # Set individual tax rates if needed
-
-    # If you're handling projects
-    # $form->{projectnumber_$i} = ...;
-
-    # If you're handling serialized inventory
-    # $form->{serialnumber_$i} = ...;
-
-    # If you're handling discounts
-    # $form->{cashdiscount} = ...;
-    # $form->{discountterms} = ...;
-
-    # Other fields  to set:
-    # $form->{notes}
-    # $form->{intnotes}
-    # $form->{till}
-    # $form->{warehouse_id}
-    # $form->{onhold}
-
     $c->log->warn(Dumper($form));
 
     IS->post_invoice($c->slconfig, $form);
-    
 
-
-    $c->render(json => {data => Dumper($form)})
+    $c->render(json => {data => Dumper($form)});
 });
+
 $api->get('/ar/salesinvoice' => sub { 
     my $c = shift;
     my $client = $c->param('client');
