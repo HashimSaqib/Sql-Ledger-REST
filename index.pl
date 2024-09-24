@@ -1176,6 +1176,8 @@ $api->post('/ar/:type' => sub {
     $form->{currency} = $data->{selectedCurrency}->{curr};
     $form->{exchangerate} = $data->{selectedCurrency}->{rn} || 1;
     $form->{AR} = $data->{salesAccount}->{accno};
+    $form->{notes} = $data->{notes} || '';
+    $form->{intnotes} = $data->{intnotes} || '';
 
     # Other invoice details
     $form->{ordnumber} = $data->{ordNumber} || '';
@@ -1209,6 +1211,7 @@ $api->post('/ar/:type' => sub {
     }
 
 
+    $form->{taxincluded} = 0;  
     # Taxes
     if ($data->{taxes} && ref($data->{taxes}) eq 'ARRAY') {
         my @taxaccounts;
@@ -1220,7 +1223,6 @@ $api->post('/ar/:type' => sub {
         $form->{taxincluded} = $data->{taxincluded};
     }
 
-    $form->{taxincluded} = 0;  
     $form->{department_id} = undef;  
     $form->{employee_id} = undef;  
     $form->{language_code} = 'en';  
@@ -1232,6 +1234,28 @@ $api->post('/ar/:type' => sub {
 
     $c->render(json => {data => Dumper($form)});
 });
+
+$api->get('/arap/transactions/:type' => sub { 
+    my $c = shift;
+    my $client = $c->param('client');
+    my $type = $c->param('type');
+    my $data = $c->req->json;
+
+
+    # Validate the type parameter
+    unless ($type eq 'vendor' || $type eq 'customer') {
+        return $c->render(json => { error => 'Invalid type. Must be either vendor or customer.' }, status => 400);
+    }
+
+    my $form = new Form;
+    $form->{vc} = $type;
+
+    ARAP->transactions($c->slconfig, $form);
+    $c->log->warn(Dumper($form));
+
+    $c->render(json => { $form });
+});
+
 
 $api->get('/ar/salesinvoice' => sub { 
     my $c = shift;
