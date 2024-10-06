@@ -2274,8 +2274,9 @@ sub retrieve_invoice {
   my $query;
   my $ref;
   my $mref;
-  
+
   $form->{currencies} = $form->get_currencies($myconfig, $dbh);
+  $form->create_links("AR", $myconfig, "customer");
  
   if ($form->{id} *= 1) {
     
