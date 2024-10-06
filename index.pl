@@ -1427,7 +1427,7 @@ $api->get(
             shippingPoint  => $form->{shippingpoint},
             shipVia        => $form->{shipvia},
             wayBill        => $form->{waybill},
-            description    => $form->{description},
+            description    => $form->{invdescription},
             notes          => $form->{notes},
             intnotes       => $form->{intnotes},
             invNumber      => $form->{invnumber},
