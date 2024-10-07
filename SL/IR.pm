@@ -2000,6 +2000,8 @@ sub retrieve_invoice {
   my %defaults = $form->get_defaults($dbh, \@{['%accno_id']});
 
   $form->{currencies} = $form->get_currencies($myconfig, $dbh);
+  $form->create_links("AP", $myconfig, "vendor");
+
   
   # get default accounts and last invoice number
   for (qw(inventory_accno income_accno expense_accno fxgainloss_accno)) {

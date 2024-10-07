@@ -19,6 +19,7 @@ use SL::CT;
 use SL::RP;
 use SL::AA;
 use SL::IS;
+use SL::IR;
 use SL::CA;
 use SL::GL;
 use DateTime::Format::ISO8601;
@@ -137,7 +138,6 @@ qq'General Ledger--General Ledger;General Ledger--Add Transaction;General Ledger
 helper check_perms => sub {
     my ( $c, $sessionkey, $permission ) = @_;
 
-    # Step 1: Validate the session key
     my $session =
       $c->db->query( 'SELECT employeeid FROM apisessions WHERE sessionkey = ?',
         $sessionkey )->hash;
@@ -1073,7 +1073,6 @@ $api->get(
     }
 );
 
-# POST route to create a new currency
 $api->any(
     [qw(POST PUT)] => '/system/currencies' => sub {
         my $c      = shift;
@@ -1140,66 +1139,12 @@ $api->delete(
     }
 );
 
-###############################
-####                       ####
-####       Customers       ####
-####                       ####
-###############################
-
-$api->get(
-    '/customers' => sub {
-        my $c      = shift;
-        my $client = $c->param('client');
-
-        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
-
-        my $form = new Form;
-
-        $form->{vc} = 'customer';
-        AA->all_names( $c->slconfig, $form );
-        warn( Dumper($form) );
-
-        for my $item ( @{ $form->{all_vc} } ) {
-            $item->{label} = $item->{name} . " -- " . $item->{customernumber};
-        }
-
-        $c->render( json => { customers => $form->{all_vc} } );
-    }
-);
-
-$api->get(
-    '/customers/:id' => sub {
-        my $c      = shift;
-        my $client = $c->param('client');
-        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
-
-        my $form = new Form;
-        $form->{vc}          = 'customer';
-        $form->{customer_id} = $c->param('id');
-
-        AA->get_name( $c->slconfig, $form );
-
-        # Construct the full address
-        my $full_address = join( ' ',
-            $form->{address1} // '',
-            $form->{address2} // '',
-            $form->{city}     // '',
-            $form->{state}    // '',
-            $form->{country}  // '' );
-
-        # Add the full address to the form object
-        $form->{full_address} = $full_address;
-
-        # Dereference the form object to render it as JSON
-        $c->render( json => {%$form} );
-    }
-);
-
 ##########################
 ####                  ####
 #### Goods & Services ####
 ####                  ####
 ##########################
+
 $api->get(
     '/items' => sub {
         my $c      = shift;
@@ -1224,6 +1169,41 @@ $api->get(
 
         # Render the response as JSON
         $c->render( json => { parts => $parts } );
+    }
+);
+
+###############################
+####                       ####
+####         ARAP          ####
+####                       ####
+###############################
+
+$api->get(
+    '/arap/transactions/:type' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        my $type   = $c->param('type');
+        my $data   = $c->req->json;
+
+        # Validate the type parameter
+        unless ( $type eq 'vendor' || $type eq 'customer' ) {
+            return $c->render(
+                json => {
+                    error => 'Invalid type. Must be either vendor or customer.'
+                },
+                status => 400
+            );
+        }
+
+        my $form = new Form;
+        $form->{vc}               = $type;
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+        $form->{summary}          = 1;
+        AA->transactions( $c->slconfig, $form );
+
+        my @transactions = @{ $form->{transactions} };
+
+        $c->render( json => \@transactions );
     }
 );
 
@@ -1319,35 +1299,6 @@ $api->post(
         IS->post_invoice( $c->slconfig, $form );
 
         $c->render( json => { data => Dumper($form) } );
-    }
-);
-
-$api->get(
-    '/arap/transactions/:type' => sub {
-        my $c      = shift;
-        my $client = $c->param('client');
-        my $type   = $c->param('type');
-        my $data   = $c->req->json;
-
-        # Validate the type parameter
-        unless ( $type eq 'vendor' || $type eq 'customer' ) {
-            return $c->render(
-                json => {
-                    error => 'Invalid type. Must be either vendor or customer.'
-                },
-                status => 400
-            );
-        }
-
-        my $form = new Form;
-        $form->{vc}               = $type;
-        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
-        $form->{summary}          = 1;
-        AA->transactions( $c->slconfig, $form );
-
-        my @transactions = @{ $form->{transactions} };
-
-        $c->render( json => \@transactions );
     }
 );
 
@@ -1451,4 +1402,307 @@ $api->get(
     }
 );
 
+###############################
+####                       ####
+####       Customers       ####
+####                       ####
+###############################
+
+$api->get(
+    '/customers' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+        my $form = new Form;
+
+        $form->{vc} = 'customer';
+        AA->all_names( $c->slconfig, $form );
+        warn( Dumper($form) );
+
+        for my $item ( @{ $form->{all_vc} } ) {
+            $item->{label} = $item->{name} . " -- " . $item->{customernumber};
+        }
+
+        $c->render( json => { customers => $form->{all_vc} } );
+    }
+);
+
+$api->get(
+    '/customers/:id' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+        my $form = new Form;
+        $form->{vc}          = 'customer';
+        $form->{customer_id} = $c->param('id');
+
+        AA->get_name( $c->slconfig, $form );
+
+        # Construct the full address
+        my $full_address = join( ' ',
+            $form->{address1} // '',
+            $form->{address2} // '',
+            $form->{city}     // '',
+            $form->{state}    // '',
+            $form->{country}  // '' );
+
+        # Add the full address to the form object
+        $form->{full_address} = $full_address;
+
+        # Dereference the form object to render it as JSON
+        $c->render( json => {%$form} );
+    }
+);
+
+###############################
+####                       ####
+####       Vendors         ####
+####                       ####
+###############################
+
+$api->get(
+    '/vendors' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+        my $form = new Form;
+
+        $form->{vc} = 'vendor';
+        AA->all_names( $c->slconfig, $form );
+        warn( Dumper($form) );
+
+        for my $item ( @{ $form->{all_vc} } ) {
+            $item->{label} = $item->{name} . " -- " . $item->{vendornumber};
+        }
+
+        $c->render( json => { vendors => $form->{all_vc} } );
+    }
+);
+
+$api->get(
+    '/vendors/:id' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+        my $form = new Form;
+        $form->{vc}        = 'vendor';
+        $form->{vendor_id} = $c->param('id');
+
+        AA->get_name( $c->slconfig, $form );
+
+        # Construct the full address
+        my $full_address = join( ' ',
+            $form->{address1} // '',
+            $form->{address2} // '',
+            $form->{city}     // '',
+            $form->{state}    // '',
+            $form->{country}  // '' );
+
+        # Add the full address to the form object
+        $form->{full_address} = $full_address;
+
+        # Dereference the form object to render it as JSON
+        $c->render( json => {%$form} );
+    }
+);
+
+###############################
+####                       ####
+####           AP          ####
+####                       ####
+###############################
+
+$api->post(
+    '/ap/:type/:id' => { id => undef } => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        my $data   = $c->req->json;
+        warn( Dumper($data) );
+        my $type = $c->param('type');
+        my $dbs  = $c->dbs($client);
+        my $id   = $c->param('id');
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+
+        my $form = new Form;
+
+        $form->{type} = $type;
+
+        # Basic invoice details
+        $form->{id} = undef;
+        if ($id) {
+            $form->{id} = $id;
+        }
+        $form->{invnumber}    = $data->{invNumber}   || '';
+        $form->{description}  = $data->{description} || '';
+        $form->{transdate}    = $data->{invDate};
+        $form->{duedate}      = $data->{dueDate};
+        $form->{vendor_id}    = $data->{selectedVendor}->{id};
+        $form->{vendor}       = $data->{selectedVendor}->{name};
+        $form->{currency}     = $data->{selectedCurrency}->{curr};
+        $form->{exchangerate} = $data->{selectedCurrency}->{rn} || 1;
+        $form->{AP}           = $data->{salesAccount}->{accno};
+        $form->{notes}        = $data->{notes}    || '';
+        $form->{intnotes}     = $data->{intnotes} || '';
+
+        # Other invoice details
+        $form->{ordnumber}     = $data->{ordNumber}     || '';
+        $form->{ponumber}      = $data->{poNumber}      || '';
+        $form->{shippingpoint} = $data->{shippingPoint} || '';
+        $form->{shipvia}       = $data->{shipVia}       || '';
+        $form->{waybill}       = $data->{wayBill}       || '';
+
+        # Line items
+        $form->{rowcount} = scalar @{ $data->{lines} };
+        for my $i ( 1 .. $form->{rowcount} ) {
+            my $line = $data->{lines}[ $i - 1 ];
+            $form->{"id_$i"}          = $line->{number};
+            $form->{"description_$i"} = $line->{description};
+            $form->{"qty_$i"}         = $line->{qty};
+            $form->{"sellprice_$i"}   = $line->{price};
+            $form->{"discount_$i"}    = $line->{discount} || 0;
+            $form->{"unit_$i"}        = $line->{unit}     || '';
+        }
+
+        # Payments
+        $form->{paidaccounts} = 0;    # Start with 0 processed payments
+        for my $payment ( @{ $data->{payments} } ) {
+            next unless $payment->{amount} > 0;
+            $form->{paidaccounts}++;
+            my $i = $form->{paidaccounts};
+            $form->{"datepaid_$i"} = $payment->{date};
+            $form->{"source_$i"}   = $payment->{source} || '';
+            $form->{"paid_$i"}     = $payment->{amount};
+            $form->{"AP_paid_$i"}  = $payment->{account};
+        }
+
+        $form->{taxincluded} = 0;
+
+        # Taxes
+        if ( $data->{taxes} && ref( $data->{taxes} ) eq 'ARRAY' ) {
+            my @taxaccounts;
+            for my $tax ( @{ $data->{taxes} } ) {
+                push @taxaccounts, $tax->{accno};
+                $form->{"$tax->{accno}_rate"} = $tax->{rate};
+            }
+            $form->{taxaccounts} = join( ' ', @taxaccounts );
+            $form->{taxincluded} = $data->{taxincluded};
+        }
+
+        $form->{department_id} = undef;
+        $form->{employee_id}   = undef;
+        $form->{language_code} = 'en';
+        $form->{precision}     = $data->{selectedCurrency}->{prec} || 2;
+
+        warn( Dumper($form) );
+
+        IR->post_invoice( $c->slconfig, $form );
+
+        $c->render( json => { data => Dumper($form) } );
+    }
+);
+
+$api->get(
+    '/ap/vendorinvoice/:id' => sub {
+        my $c      = shift;
+        my $client = $c->param('client');
+        my $data   = $c->req->json;
+        my $id     = $c->param('id');
+
+        # Initialize required variables
+        my $dbs = $c->dbs($client);
+        $c->slconfig->{dbconnect} = "dbi:Pg:dbname=$client";
+        my $ml       = 1;
+        my %myconfig = ();    # Configuration hash
+
+        # Create a new Form object and set initial values
+        my $form = Form->new;
+        $form->{id}   = $id;
+        $form->{vc}   = "vendor";
+        $form->{type} = 'invoice';
+
+        # Retrieve the invoice details
+        IR->retrieve_invoice( $c->slconfig, $form );
+        IR->invoice_details( $c->slconfig, $form );
+
+        # Create payments array
+        my @payments;
+
+     # Check if $form->{acc_trans}{AR_paid} is defined and is an array reference
+        if ( defined $form->{acc_trans}{AP_paid}
+            && ref( $form->{acc_trans}{AP_paid} ) eq 'ARRAY' )
+        {
+            for my $i ( 1 .. scalar @{ $form->{acc_trans}{AP_paid} } ) {
+                push @payments,
+                  {
+                    date    => $form->{acc_trans}{AP_paid}[ $i - 1 ]{transdate},
+                    source  => $form->{acc_trans}{AP_paid}[ $i - 1 ]{source},
+                    memo    => $form->{acc_trans}{AP_paid}[ $i - 1 ]{memo},
+                    amount  => $form->{acc_trans}{AP_paid}[ $i - 1 ]{amount},
+                    account =>
+"$form->{acc_trans}{AP_paid}[$i-1]{accno}--$form->{acc_trans}{AP_paid}[$i-1]{description}"
+                  };
+            }
+        }
+
+        my @lines = map {
+            {
+                id          => $_->{id},
+                partnumber  => $_->{partnumber},
+                description => $_->{description},
+                qty         => $_->{qty},
+                oh          => $_->{onhand},
+                unit        => $_->{unit},
+                price       => $_->{sellprice},
+                discount    => $_->{discount},
+                taxaccounts => [ split ' ', $_->{taxaccounts} ]
+            }
+        } @{ $form->{invoice_details} };
+
+        # Process tax information
+        my @taxes;
+        if ( $form->{acc_trans}{AP_tax} ) {
+            @taxes = map {
+                {
+                    accno  => $_->{accno},
+                    amount => $_->{amount},
+                    rate   => $_->{rate}
+                }
+            } @{ $form->{acc_trans}{AP_tax} };
+        }
+
+        # Create the transformed data structure
+        my $json_data = {
+            vendornumber  => $form->{vendornumber},
+            shippingPoint => $form->{shippingpoint},
+            shipVia       => $form->{shipvia},
+            wayBill       => $form->{waybill},
+            description   => $form->{invdescription},
+            notes         => $form->{notes},
+            intnotes      => $form->{intnotes},
+            invNumber     => $form->{invnumber},
+            ordNumber     => $form->{ordnumber},
+            invDate       => $form->{transdate},
+            dueDate       => $form->{duedate},
+            poNumber      => $form->{ponumber},
+            salesAccount  => $form->{acc_trans}{AP}[0],
+            lines         => \@lines,
+            payments      => \@payments
+        };
+
+        # Add tax information if present
+        if (@taxes) {
+            $json_data->{taxes}       = \@taxes;
+            $json_data->{taxincluded} = $form->{taxincluded};
+        }
+
+        # Render the structured response in JSON format
+        $c->render( json => $json_data );
+    }
+);
 app->start;
